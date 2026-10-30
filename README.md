@@ -84,6 +84,7 @@ bDld 是一个 Chrome / Edge 扩展：在 B 站视频页上，把正在看的视
 | `npm run smoke` | 在 Chromium 中加载 `dist`，确认 service worker 注册成功 |
 | `npm run check:engine` | 用本地服务器模拟 CDN，检查下载引擎（重试、567 拦截页、地址过期、排队、取消、临时文件清理） |
 | `npm run check:popup` | 把 B 站域名解析到本地 HTTPS 服务器，离线检查弹出窗口、页面探针、请求头改写与完整下载流程 |
+| `npm run check:speed` | 以限速的本地 CDN 下载约 180 MB，中途关闭再打开弹出窗口，逐秒对照服务器发送速度与弹出窗口显示的速度；可用 `TTFB_MS` 设置每个分段请求的首字节延迟 |
 | `npm run e2e` | 打开一个真实的公开视频，下载一次并用 ffprobe 检查结果 |
 
 `verify:remux` 对照的内容：每个包的 pts、dts、时长、关键帧标志、大小与 MD5，以及各路流的起始时间与时长，并确认输出是普通（非分片）MP4。
