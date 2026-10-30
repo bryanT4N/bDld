@@ -40,3 +40,15 @@ export function mediaPair(): { video: string; audio: string; real: boolean } {
   const dir = path.join(root, ".cache", "fixtures");
   return { video: syntheticVideo(dir, "avc", 30), audio: syntheticAudio(dir, 30), real: false };
 }
+
+/** A long constant-bitrate 720p AVC stream with 5 s fragments, for throughput measurements. */
+export function largeVideo(dir: string, seconds: number, mbps: number): string {
+  const name = `synth-avc-720p-${seconds}s-${mbps}M.m4s`;
+  const out = path.join(dir, name);
+  if (fs.existsSync(out)) return out;
+  return synthesize(dir, name, [
+    "-f", "lavfi", "-i", `testsrc2=duration=${seconds}:size=1280x720:rate=25`, "-pix_fmt", "yuv420p",
+    "-c:v", "libx264", "-preset", "ultrafast", "-g", "125",
+    "-b:v", `${mbps}M`, "-minrate", `${mbps}M`, "-maxrate", `${mbps}M`, "-bufsize", `${mbps}M`, "-x264-params", "nal-hrd=cbr",
+  ]);
+}

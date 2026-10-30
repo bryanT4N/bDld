@@ -1,140 +1,34 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { signWbi } from "../src/probe/wbi";
-import { iconPng } from "./lib/icon.mjs";
-import { launchExtension } from "./lib/browser";
-import { root, run } from "./lib/env";
+import { root } from "./lib/env";
+import { BVID, CID2, openVideoTab, startFakeSite } from "./lib/fake-site";
 import { mediaPair } from "./lib/fixtures";
-import { startMediaServer } from "./lib/media-server";
-import { locateHead } from "./lib/merge";
 
 const out = path.join(root, ".cache", "popup-check");
-fs.mkdirSync(out, { recursive: true });
-
-function openssl(): string {
-  if (process.env.OPENSSL) return process.env.OPENSSL;
-  const git = "C:/Program Files/Git/mingw64/bin/openssl.exe";
-  return fs.existsSync(git) ? git : "openssl";
-}
-
-const key = path.join(out, "key.pem");
-const cert = path.join(out, "cert.pem");
-const config = path.join(out, "openssl.cnf");
-fs.writeFileSync(config, "[req]\ndistinguished_name = dn\n[dn]\n");
-run(openssl(), ["req", "-x509", "-config", config, "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert, "-days", "1", "-subj", "/CN=bdld-test"]);
-
-const BVID = "BV1LF4izVEnQ";
-const CID = 2;
 const pair = mediaPair();
-const videoName = `${CID}-1-100023.m4s`;
-const audioName = `${CID}-1-30216.m4s`;
-const deadline = Math.floor(Date.now() / 1000) + 7200;
-const media = (mode: string, name: string) => `https://upos-sz-mirrorcosov.bilivideo.com/${mode}/${name}?deadline=${deadline}`;
-const range = ([a, b]: [number, number]) => `${a}-${b}`;
-const bandwidth = (file: string) => Math.round((fs.statSync(file).size * 8) / 156);
-const vHead = locateHead(pair.video);
-const aHead = locateHead(pair.audio);
-
-const playinfo = {
-  code: 0,
-  data: {
-    dash: {
-      video: [
-        {
-          id: 16, baseUrl: media("slow", videoName), backupUrl: [media("media", videoName)], bandwidth: bandwidth(pair.video),
-          codecs: "avc1.64001E", width: 640, height: 360, frameRate: "25", codecid: 7,
-          segment_base: { initialization: range(vHead.initRange), index_range: range(vHead.indexRange) },
-        },
-      ],
-      audio: [
-        {
-          id: 30216, baseUrl: media("slow", audioName), backupUrl: [], bandwidth: bandwidth(pair.audio), codecs: "mp4a.40.2",
-          segment_base: { initialization: range(aHead.initRange), index_range: range(aHead.indexRange) },
-        },
-      ],
-    },
-  },
-};
-const videoData = {
-  bvid: BVID, aid: 1, cid: CID, title: "【测试】一个很长很长的视频标题，用来检查弹出窗口里两行截断的效果是否正常",
-  duration: 156, pic: "https://i0.hdslb.com/bfs/archive/cover.png", owner: { name: "测试 UP 主" },
-  pages: [{ cid: CID, page: 1, part: "P1", duration: 156 }],
-};
-const videoPage = `<!doctype html><meta charset="utf-8"><title>fake video page</title><script>
-window.__INITIAL_STATE__ = ${JSON.stringify({ videoData })};
-window.__playinfo__ = ${JSON.stringify(playinfo)};
-window.player = { getManifest: () => ({ bvid: "${BVID}", cid: ${CID}, p: 1 }), getSession: () => "s" };
-</script><h1>fake video page</h1>`;
-
-// Part 2 of the same video after in-site navigation: __playinfo__ still describes part 1, so the
-// probe must call playurl, signed with the page's WBI keys and sent with the page's cookies.
-const CID2 = 3;
-const WBI_KEYS = { imgKey: "7cd084941338484aae1ad9425b84077c", subKey: "4932caff0ff746eab6f01bf08b70ac45" };
-const part2Data = { ...videoData, pages: [...videoData.pages, { cid: CID2, page: 2, part: "第二部分", duration: 156 }] };
-const part2Page = `<!doctype html><meta charset="utf-8"><title>fake video page p2</title><script>
-window.__INITIAL_STATE__ = ${JSON.stringify({ videoData: part2Data })};
-window.__playinfo__ = ${JSON.stringify(playinfo)};
-window.player = { getManifest: () => ({ bvid: "${BVID}", cid: ${CID2}, p: 2 }), getSession: () => "session-2" };
-localStorage.setItem("wbi_img_urls", "https://i0.hdslb.com/bfs/wbi/${WBI_KEYS.imgKey}.png-https://i0.hdslb.com/bfs/wbi/${WBI_KEYS.subKey}.png");
-document.cookie = "DedeUserID=42; domain=.bilibili.com; path=/; secure";
-</script><h1>fake video page p2</h1>`;
-const apiCalls: { url: URL; cookie: string; signatureValid: boolean }[] = [];
-
-const server = await startMediaServer(
-  { [videoName]: pair.video, [audioName]: pair.audio },
-  {
-    tls: { key: fs.readFileSync(key, "utf8"), cert: fs.readFileSync(cert, "utf8") },
-    handle(req, res, url) {
-      const host = req.headers.host ?? "";
-      if (host === "i0.hdslb.com") {
-        res.writeHead(200, { "Content-Type": "image/png" }).end(iconPng(224));
-        return true;
-      }
-      if (host === "api.bilibili.com") {
-        const params = Object.fromEntries([...url.searchParams].filter(([k]) => k !== "wts" && k !== "w_rid"));
-        const resigned = signWbi(params, WBI_KEYS, Number(url.searchParams.get("wts")));
-        apiCalls.push({ url, cookie: req.headers.cookie ?? "", signatureValid: resigned === url.search.slice(1) });
-        res.writeHead(200, {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "https://www.bilibili.com",
-          "Access-Control-Allow-Credentials": "true",
-        });
-        res.end(JSON.stringify(playinfo));
-        return true;
-      }
-      if (host !== "www.bilibili.com") return false;
-      const html = !url.pathname.startsWith("/video/")
-        ? "<!doctype html><title>home</title><h1>home</h1>"
-        : url.searchParams.get("p") === "2"
-          ? part2Page
-          : videoPage;
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(html);
-      return true;
-    },
-  },
-);
-const hosts = ["www.bilibili.com", "api.bilibili.com", "upos-sz-mirrorcosov.bilivideo.com", "i0.hdslb.com"];
-const h = await launchExtension([
-  `--host-resolver-rules=${hosts.map((x) => `MAP ${x} 127.0.0.1:${server.port}`).join(", ")}`,
-  "--ignore-certificate-errors",
-]);
+const site = await startFakeSite({
+  dir: out,
+  title: "【测试】一个很长很长的视频标题，用来检查弹出窗口里两行截断的效果是否正常",
+  durationSec: 156,
+  videos: [{ qn: 16, codec: "avc", fmt: 100023, height: 360, file: pair.video }],
+  audio: { id: 30216, file: pair.audio },
+  mode: "slow",
+});
+const { server, apiCalls } = site;
+const videoData = { title: site.title };
+const h = await site.launch();
 
 const ok = (msg: string) => console.log(`ok   ${msg}`);
 try {
-  const tab = await h.ctx.newPage();
-  await tab.goto(`https://www.bilibili.com/video/${BVID}/`);
+  const videoTab = await openVideoTab(h);
   const home = await h.ctx.newPage();
   await home.goto("https://www.bilibili.com/");
+  const homeTab = await h.sw.evaluate(async () => (await chrome.tabs.query({ url: "https://www.bilibili.com/" }))[0]!.id!);
+  const tabIds = { video: videoTab, home: homeTab };
 
   const popup = await h.ctx.newPage();
   await popup.setViewportSize({ width: 340, height: 420 });
-  await popup.goto(`chrome-extension://${h.extensionId}/popup.html`);
-  const tabIds = await popup.evaluate(async () => {
-    const [video] = await chrome.tabs.query({ url: "https://www.bilibili.com/video/*" });
-    const [home] = await chrome.tabs.query({ url: "https://www.bilibili.com/" });
-    return { video: video!.id!, home: home!.id! };
-  });
 
   await popup.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${tabIds.home}`);
   await popup.getByText("请在 B 站视频页面使用").waitFor();
@@ -191,12 +85,7 @@ try {
   assert.equal(pageRequests.length, 0, "matching __playinfo__ must not trigger a playurl request");
   ok("no playurl request when __playinfo__ belongs to the current cid");
 
-  const part2 = await h.ctx.newPage();
-  await part2.goto(`https://www.bilibili.com/video/${BVID}/?p=2`);
-  const part2Tab = await popup.evaluate(async () => {
-    const tabs = await chrome.tabs.query({ url: "https://www.bilibili.com/video/*" });
-    return tabs.find((t) => t.url?.includes("p=2"))!.id!;
-  });
+  const part2Tab = await openVideoTab(h, "?p=2");
   await popup.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${part2Tab}`);
   await popup.locator("select").waitFor();
   assert.equal(await popup.locator("main").getAttribute("data-source"), "playurl");

@@ -4,9 +4,10 @@ import { isTerminal, type Chosen, type DownloadTask, type TaskPhase, type VideoI
 import { TaskError, failureOf } from "./errors";
 import type { TempFile } from "./opfs";
 import { downloadAndRemux } from "./pipeline";
+import { RateMeter } from "./rate";
 
 const PROGRESS_INTERVAL_MS = 500;
-const SPEED_WINDOW_MS = 3000;
+const TICK_MS = 1000;
 const KEEP_FINISHED = 20;
 const KEEP_RECORDS = 2000;
 
@@ -105,7 +106,13 @@ export class Engine {
     let file: TempFile | undefined;
     let url: string | undefined;
     let done = 0;
-    const samples: [number, number][] = [];
+    let meter: RateMeter | undefined;
+    // Refreshes the speed while no bytes arrive, so a stall shows as a falling rate.
+    let ticker: ReturnType<typeof setInterval> | undefined;
+    const progress = () => {
+      if (task.state.phase !== "downloading" || !meter) return;
+      task.state = { ...task.state, doneBytes: done, bytesPerSec: meter.rate(Date.now()) };
+    };
     try {
       this.set(task, { phase: "preparing" });
       file = await this.deps.createTempFile(`${task.id}.mp4`);
@@ -121,19 +128,24 @@ export class Engine {
           },
           onBytes: (n) => {
             done += n;
-            if (task.state.phase !== "downloading") return;
-            const now = Date.now();
-            samples.push([now, done]);
-            while (samples.length > 1 && now - samples[0]![0] > SPEED_WINDOW_MS) samples.shift();
-            const [t0, d0] = samples[0]!;
-            const bytesPerSec = now > t0 ? ((done - d0) * 1000) / (now - t0) : 0;
-            task.state = { ...task.state, doneBytes: done, bytesPerSec };
+            if (n > 0) meter?.add(n, Date.now());
+            progress();
             this.notify(true);
           },
         },
         {
-          onDownloading: (totalBytes) => this.set(task, { phase: "downloading", doneBytes: done, totalBytes, bytesPerSec: 0 }),
-          onFinalizing: () => this.set(task, { phase: "finalizing" }),
+          onDownloading: (totalBytes) => {
+            meter = new RateMeter(Date.now());
+            ticker = setInterval(() => {
+              progress();
+              this.notify();
+            }, TICK_MS);
+            this.set(task, { phase: "downloading", doneBytes: done, totalBytes, bytesPerSec: 0 });
+          },
+          onFinalizing: () => {
+            clearInterval(ticker);
+            this.set(task, { phase: "finalizing" });
+          },
         },
       );
       url = URL.createObjectURL(await file.file());
@@ -154,6 +166,7 @@ export class Engine {
       this.set(task, abort.signal.aborted ? { phase: "canceled" } : failureOf(e));
       abort.abort();
     } finally {
+      clearInterval(ticker);
       if (url) URL.revokeObjectURL(url);
       await file?.remove();
     }
