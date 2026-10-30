@@ -1,4 +1,4 @@
-import type { AudioStream, ProbeResult, StreamCommon, VideoCodec, VideoInfo, VideoStream } from "../shared/types";
+import type { AudioStream, Playing, ProbeResult, StreamCommon, VideoCodec, VideoInfo, VideoStream } from "../shared/types";
 
 const MEDIA_HOSTS = ["bilivideo.com", "bilivideo.cn", "akamaized.net"];
 const CODEC_IDS: Record<number, VideoCodec> = { 7: "avc", 12: "hevc", 13: "av1" };
@@ -129,6 +129,26 @@ function videoInfo(videoData: unknown, manifest: unknown, loggedIn: boolean): Vi
   return info;
 }
 
+function formatId(url: unknown): string | undefined {
+  if (typeof url !== "string") return undefined;
+  try {
+    return /-(\d+)\.m4s$/.exec(new URL(url).pathname)?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+/** Match what the player reports against the offered streams; anything unusable yields "unknown". */
+function playing(player: unknown, videos: VideoStream[]): Playing {
+  const p = typeof player === "object" && player !== null ? (player as Obj) : {};
+  const fmt = formatId(p.playUrl);
+  const exact = fmt === undefined ? undefined : videos.find((v) => v.urls.some((u) => formatId(u) === fmt));
+  if (exact) return { via: "player-stream", qn: exact.qn, codec: exact.codec };
+  const q = typeof p.quality === "object" && p.quality !== null ? (p.quality as Obj) : {};
+  const qn = [q.realQ, q.nowQ].find((v): v is number => typeof v === "number" && v > 0 && videos.some((s) => s.qn === v));
+  return qn === undefined ? { via: "unknown" } : { via: "player-quality", qn };
+}
+
 /** Validate what the page probe returned (untrusted page data) into a ProbeResult. */
 export function normalizeProbe(raw: unknown): ProbeResult {
   try {
@@ -147,6 +167,7 @@ export function normalizeProbe(raw: unknown): ProbeResult {
     return {
       kind: "ok",
       video,
+      playing: playing(r.player, videos),
       offer: {
         videos,
         audios,

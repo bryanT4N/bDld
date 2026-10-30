@@ -13,6 +13,7 @@ export type RawProbe =
       manifest: unknown;
       play: unknown;
       source: "playinfo" | "playurl";
+      player: { quality: unknown; playUrl: unknown };
       loggedIn: boolean;
       fetchedAt: number;
     };
@@ -20,7 +21,12 @@ export type RawProbe =
 interface PageWindow {
   __INITIAL_STATE__?: { videoData?: unknown };
   __playinfo__?: { data?: { dash?: { video?: { baseUrl?: string; base_url?: string }[] } } };
-  player?: { getManifest?(): { bvid?: string; cid?: number | string; p?: number } | undefined; getSession?(): string };
+  player?: {
+    getManifest?(): { bvid?: string; cid?: number | string; p?: number } | undefined;
+    getSession?(): string;
+    getQuality?(): unknown;
+    getMediaInfo?(): { playUrl?: unknown } | undefined;
+  };
 }
 
 function playinfoCid(w: PageWindow): number | undefined {
@@ -28,6 +34,14 @@ function playinfoCid(w: PageWindow): number | undefined {
   const url = first?.baseUrl ?? first?.base_url;
   const m = url ? /\/(\d+)-\d+-\d+\.m4s/.exec(new URL(url).pathname) : null;
   return m ? Number(m[1]) : undefined;
+}
+
+function attempt<T>(read: () => T): T | undefined {
+  try {
+    return read();
+  } catch {
+    return undefined;
+  }
 }
 
 /** Runs in the video page's MAIN world; must not modify the page. */
@@ -39,7 +53,11 @@ export async function probePage(): Promise<RawProbe> {
   const manifest = w.player?.getManifest?.();
   if (!manifest?.cid || !manifest.bvid) return { kind: "error", message: "播放器还没有准备好，请稍后再试" };
   const loggedIn = /(?:^|;\s*)DedeUserID=\d+/.test(document.cookie);
-  const base = { kind: "raw" as const, videoData, manifest, loggedIn, fetchedAt: Date.now() };
+  const player = {
+    quality: attempt(() => w.player?.getQuality?.()),
+    playUrl: attempt(() => w.player?.getMediaInfo?.()?.playUrl),
+  };
+  const base = { kind: "raw" as const, videoData, manifest, player, loggedIn, fetchedAt: Date.now() };
 
   if (w.__playinfo__?.data && playinfoCid(w) === Number(manifest.cid)) {
     return { ...base, play: w.__playinfo__.data, source: "playinfo" };

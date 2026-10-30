@@ -1,9 +1,9 @@
 import { formatBytes, formatDuration } from "../shared/format";
 import { isTasksChanged, send } from "../shared/messages";
-import { CODEC_NAMES, qualityOptions, type QualityOption } from "../shared/select";
-import { isTerminal, type CodecPreference, type DownloadTask, type FailureReason, type ProbeResult, type VideoInfo } from "../shared/types";
+import { qualityLabel } from "../shared/quality";
+import { CODEC_NAMES, approxBytes, atQuality, bestAudio, codecsAt, defaultSelection, qualities, streamFor } from "../shared/select";
+import { isTerminal, type DownloadTask, type FailureReason, type ProbeResult, type Selection, type VideoInfo } from "../shared/types";
 
-const PREF_KEY = "codecPreference";
 /** playurl addresses expire after about two hours; re-probe well before that. */
 const OFFER_MAX_AGE_MS = 90 * 60 * 1000;
 
@@ -38,8 +38,7 @@ const app = document.getElementById("app")!;
 let tabId: number | undefined;
 let probe: ProbeResult | undefined;
 let tasks: DownloadTask[] = [];
-let pref: CodecPreference = "compat";
-let selectedQn: number | undefined;
+let selection: Selection | undefined;
 let taskSlot: HTMLElement | undefined;
 let downloadButton: HTMLButtonElement | undefined;
 
@@ -54,10 +53,6 @@ function taskFor(video: VideoInfo): DownloadTask | undefined {
   return tasks
     .filter((t) => t.video.bvid === video.bvid && t.video.cid === video.cid)
     .sort((a, b) => b.createdAt - a.createdAt)[0];
-}
-
-function options(): QualityOption[] {
-  return probe?.kind === "ok" ? qualityOptions(probe.offer, pref, probe.video.durationSec) : [];
 }
 
 function render(): void {
@@ -84,21 +79,41 @@ function render(): void {
 
   const { video } = probe;
   app.dataset.source = probe.offer.source;
-  const opts = options();
-  if (!opts.some((o) => o.qn === selectedQn)) selectedQn = opts[0]?.qn;
+  app.dataset.playing = probe.playing.via;
+  const { offer } = probe;
+  const sel = (selection ??= defaultSelection(offer, probe.playing));
+  const audio = bestAudio(offer.audios);
   const select = h(
     "select",
-    { "aria-label": "清晰度", onChange: (e) => (selectedQn = Number((e.target as HTMLSelectElement).value)) },
-    ...opts.map((o) =>
-      h(
+    {
+      "aria-label": "清晰度",
+      onChange: (e) => {
+        selection = atQuality(offer, Number((e.target as HTMLSelectElement).value), sel.codec);
+        render();
+      },
+    },
+    ...qualities(offer).map((qn) => {
+      const v = streamFor(offer, atQuality(offer, qn, sel.codec))!;
+      return h(
         "option",
-        { value: String(o.qn), selected: o.qn === selectedQn },
-        `${o.label} · ${CODEC_NAMES[o.video.codec]} · 约 ${formatBytes(o.approxBytes)}`,
-      ),
-    ),
+        { value: String(qn), selected: qn === sel.qn },
+        `${qualityLabel(qn, v.height)} · ${CODEC_NAMES[v.codec]} · 约 ${formatBytes(approxBytes(v, audio, video.durationSec))}`,
+      );
+    }),
   );
-  const prefButton = (value: CodecPreference, label: string) =>
-    h("button", { type: "button", "aria-pressed": String(pref === value), onClick: () => void setPref(value) }, label);
+  const codecButton = (codec: Selection["codec"]) =>
+    h(
+      "button",
+      {
+        type: "button",
+        "aria-pressed": String(sel.codec === codec),
+        onClick: () => {
+          selection = { qn: sel.qn, codec };
+          render();
+        },
+      },
+      CODEC_NAMES[codec],
+    );
 
   taskSlot = h("section", { class: "task" });
   downloadButton = h("button", { class: "primary", onClick: () => void download() }, "下载");
@@ -119,8 +134,7 @@ function render(): void {
       ),
     ),
     h("label", { class: "field" }, h("span", {}, "清晰度"), select),
-    h("div", { class: "field" }, h("span", {}, "编码"), h("div", { class: "segmented", role: "group", "aria-label": "编码" }, prefButton("compat", "兼容优先"), prefButton("size", "体积优先"))),
-    h("p", { class: "hint" }, pref === "compat" ? "优先 AVC，几乎所有播放器都能打开" : "优先 AV1，文件更小，需要较新的播放器"),
+    h("div", { class: "field" }, h("span", {}, "编码"), h("div", { class: "segmented", role: "group", "aria-label": "编码" }, ...codecsAt(offer, sel.qn).map(codecButton))),
     ...(video.loggedIn ? [] : [h("p", { class: "login" }, "登录后可下载更高清晰度")]),
     taskSlot,
     downloadButton,
@@ -185,12 +199,6 @@ function renderTask(): void {
   taskSlot.hidden = parts.length === 0;
 }
 
-async function setPref(value: CodecPreference): Promise<void> {
-  pref = value;
-  await chrome.storage.sync.set({ [PREF_KEY]: value });
-  render();
-}
-
 async function download(): Promise<void> {
   if (probe?.kind !== "ok" || tabId === undefined) return;
   if (Date.now() - probe.offer.fetchedAt > OFFER_MAX_AGE_MS) {
@@ -198,16 +206,17 @@ async function download(): Promise<void> {
     render();
     if (probe.kind !== "ok") return;
   }
-  const choice = options().find((o) => o.qn === selectedQn);
-  if (!choice) return;
+  const video = selection && streamFor(probe.offer, selection);
+  if (!video) return;
   downloadButton?.setAttribute("disabled", "");
-  const task = await send({ to: "sw", type: "start", video: probe.video, chosen: { video: choice.video, audio: choice.audio } });
+  const task = await send({ to: "sw", type: "start", video: probe.video, chosen: { video, audio: bestAudio(probe.offer.audios) } });
   if (!tasks.some((t) => t.id === task.id)) tasks = [...tasks, task];
   renderTask();
 }
 
 async function load(): Promise<void> {
   probe = undefined;
+  selection = undefined;
   render();
   tabId = await currentTabId();
   probe = tabId === undefined ? { kind: "not-video-page" } : await send({ to: "sw", type: "probe", tabId });
@@ -222,8 +231,6 @@ chrome.runtime.onMessage.addListener((msg: unknown) => {
 });
 
 async function main(): Promise<void> {
-  const stored = await chrome.storage.sync.get(PREF_KEY);
-  if (stored[PREF_KEY] === "size") pref = "size";
   tasks = await send({ to: "sw", type: "tasks" });
   await load();
 }

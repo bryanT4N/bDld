@@ -1,7 +1,22 @@
 export type ProbeResult =
   | { kind: "not-video-page" }
   | { kind: "error"; message: string }
-  | { kind: "ok"; video: VideoInfo; offer: PlayOffer };
+  | { kind: "ok"; video: VideoInfo; offer: PlayOffer; playing: Playing };
+
+/**
+ * What the page player is playing, and how that was determined: the exact stream from the
+ * format id in its current media URL, only its quality, or nothing usable.
+ */
+export type Playing =
+  | { via: "player-stream"; qn: number; codec: VideoCodec }
+  | { via: "player-quality"; qn: number }
+  | { via: "unknown" };
+
+/** A choice of video quality and codec within one PlayOffer. */
+export interface Selection {
+  qn: number;
+  codec: VideoCodec;
+}
 
 export interface VideoInfo {
   bvid: string;
@@ -80,5 +95,3 @@ export const TERMINAL_PHASES = ["done", "failed", "canceled"] as const;
 export function isTerminal(state: TaskPhase): boolean {
   return (TERMINAL_PHASES as readonly string[]).includes(state.phase);
 }
-
-export type CodecPreference = "compat" | "size";

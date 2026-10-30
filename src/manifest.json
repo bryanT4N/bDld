@@ -17,7 +17,6 @@
     "offscreen",
     "downloads",
     "declarativeNetRequestWithHostAccess",
-    "storage",
     "unlimitedStorage"
   ],
   "host_permissions": [

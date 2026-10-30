@@ -11,9 +11,14 @@ const site = await startFakeSite({
   dir: out,
   title: "【测试】一个很长很长的视频标题，用来检查弹出窗口里两行截断的效果是否正常",
   durationSec: 156,
-  videos: [{ qn: 16, codec: "avc", fmt: 100023, height: 360, file: pair.video }],
+  videos: [
+    { qn: 32, codec: "avc", fmt: 30032, height: 480, file: pair.video },
+    { qn: 32, codec: "hevc", fmt: 30033, height: 480, file: pair.video },
+    { qn: 16, codec: "avc", fmt: 30016, height: 360, file: pair.video },
+  ],
   audio: { id: 30216, file: pair.audio },
   mode: "slow",
+  player: { nowQ: 32, realQ: 32, playingFmt: 30033 },
 });
 const { server, apiCalls } = site;
 const videoData = { title: site.title };
@@ -28,6 +33,7 @@ try {
   const tabIds = { video: videoTab, home: homeTab };
 
   const popup = await h.ctx.newPage();
+  const checked = () => popup.locator("select option:checked").innerText();
   await popup.setViewportSize({ width: 340, height: 420 });
 
   await popup.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${tabIds.home}`);
@@ -38,18 +44,24 @@ try {
   await popup.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${tabIds.video}`);
   await popup.locator("select").waitFor();
   const text = await popup.locator("main").innerText();
-  for (const s of ["【测试】", "UP：测试 UP 主", "360P 流畅 · AVC · 约", "兼容优先", "体积优先", "登录后可下载更高清晰度"]) {
+  for (const s of ["【测试】", "UP：测试 UP 主", "480P 清晰 · HEVC · 约", "登录后可下载更高清晰度"]) {
     assert.ok(text.includes(s), `popup should show "${s}":\n${text}`);
   }
   assert.equal(await popup.locator("main").getAttribute("data-source"), "playinfo");
+  assert.equal(await popup.locator("main").getAttribute("data-playing"), "player-stream");
+  assert.equal(await popup.locator("select option:checked").innerText(), (await popup.locator("select option").first().innerText()));
+  ok("default is the stream the page player is playing (480P HEVC, not the compatibility-first AVC)");
   await popup.screenshot({ path: path.join(out, "2-ready.png") });
   ok("video tab: probe via executeScript(MAIN) + __playinfo__ rendered title, UP, quality with size, codec setting, login hint");
 
-  await popup.getByRole("button", { name: "体积优先" }).click();
-  assert.equal(await popup.evaluate(() => chrome.storage.sync.get("codecPreference").then((r) => r.codecPreference)), "size");
-  await popup.getByText("优先 AV1").waitFor();
-  await popup.getByRole("button", { name: "兼容优先" }).click();
-  ok("codec preference toggles and is stored in chrome.storage.sync");
+  await popup.getByRole("button", { name: "AVC", exact: true }).click();
+  assert.match(await checked(), /^480P 清晰 · AVC · 约/);
+  await popup.locator("select").selectOption("16");
+  assert.match(await checked(), /^360P 流畅 · AVC · 约/);
+  assert.deepEqual(await popup.getByRole("button", { name: /^(AVC|HEVC|AV1)$/ }).allInnerTexts(), ["AVC"]);
+  await popup.locator("select").selectOption("32");
+  await popup.getByRole("button", { name: "HEVC", exact: true }).click();
+  ok("codec choice offers only the codecs at the selected quality and keeps the codec across quality changes when offered");
 
   await popup.getByRole("button", { name: "下载", exact: true }).click();
   await popup.getByText(/下载中 [1-9]\d?%/).waitFor({ timeout: 60_000 });
@@ -65,7 +77,7 @@ try {
   await popup.getByText("已保存").waitFor({ timeout: 120_000 });
   await popup.screenshot({ path: path.join(out, "4-done.png") });
   const fileName = await popup.locator(".detail").innerText();
-  assert.equal(fileName, `${videoData.title} [${BVID}] 360P 流畅.mp4`);
+  assert.equal(fileName, `${videoData.title} [${BVID}] 480P 清晰.mp4`);
   assert.ok(fs.existsSync(path.join(h.downloadsDir, fileName)), "file in the downloads folder");
   assert.ok(await popup.getByRole("button", { name: "在文件夹中显示" }).isVisible());
   ok(`done state shows "${fileName}" and 在文件夹中显示; file exists in the downloads folder`);
