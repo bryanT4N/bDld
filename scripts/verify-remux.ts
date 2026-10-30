@@ -2,41 +2,21 @@ import fs from "node:fs";
 import path from "node:path";
 import { boxes } from "../src/remux/boxes";
 import { root, run, tool } from "./lib/env";
+import { REAL_FIXTURES, syntheticAudio, syntheticVideo } from "./lib/fixtures";
 import { mergeFiles } from "./lib/merge";
 
-const REAL_FIXTURES =
-  process.env.BDLD_REAL_FIXTURES ??
-  path.join(
-    process.env.LOCALAPPDATA ?? "",
-    "Temp/claude/d--Memorandum/e357dd80-a815-4d53-bed5-54e984a51709/scratchpad/bili-fixtures",
-  );
 const work = path.join(root, ".cache", "verify-remux");
 fs.rmSync(work, { recursive: true, force: true });
 fs.mkdirSync(work, { recursive: true });
 
 const ffmpeg = tool("ffmpeg");
 const ffprobe = tool("ffprobe");
-const FRAG = ["-movflags", "+frag_keyframe+empty_moov+default_base_moof+global_sidx"];
-
-function synth(name: string, args: string[]): string {
-  const out = path.join(work, name);
-  run(ffmpeg, ["-v", "error", "-y", ...args, "-f", "mp4", out]);
-  return out;
-}
 
 function syntheticCases(): [string, string, string][] {
-  const src = ["-f", "lavfi", "-i", "testsrc=duration=6:size=320x240:rate=25", "-pix_fmt", "yuv420p"];
-  const avc = synth("synth-avc.m4s", [...src, "-c:v", "libx264", "-bf", "3", "-g", "50", ...FRAG]);
-  const hevc = synth("synth-hevc.m4s", [
-    ...src, "-c:v", "libx265", "-x265-params", "bframes=3:keyint=50:min-keyint=50:log-level=error", "-tag:v", "hvc1", ...FRAG,
-  ]);
-  const aac = synth("synth-aac.m4s", [
-    "-f", "lavfi", "-i", "sine=frequency=440:duration=6:sample_rate=48000", "-c:a", "aac", "-b:a", "128k",
-    "-frag_duration", "2000000", ...FRAG,
-  ]);
+  const aac = syntheticAudio(work);
   return [
-    ["synthetic AVC + AAC", avc, aac],
-    ["synthetic HEVC + AAC", hevc, aac],
+    ["synthetic AVC + AAC", syntheticVideo(work, "avc"), aac],
+    ["synthetic HEVC + AAC", syntheticVideo(work, "hevc"), aac],
   ];
 }
 
