@@ -83,6 +83,7 @@ function render(): void {
   }
 
   const { video } = probe;
+  app.dataset.source = probe.offer.source;
   const opts = options();
   if (!opts.some((o) => o.qn === selectedQn)) selectedQn = opts[0]?.qn;
   const select = h(

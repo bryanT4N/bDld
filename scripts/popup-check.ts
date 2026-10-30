@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { signWbi } from "../src/probe/wbi";
 import { iconPng } from "./lib/icon.mjs";
 import { launchExtension } from "./lib/browser";
 import { root, run } from "./lib/env";
@@ -66,6 +67,20 @@ window.__playinfo__ = ${JSON.stringify(playinfo)};
 window.player = { getManifest: () => ({ bvid: "${BVID}", cid: ${CID}, p: 1 }), getSession: () => "s" };
 </script><h1>fake video page</h1>`;
 
+// Part 2 of the same video after in-site navigation: __playinfo__ still describes part 1, so the
+// probe must call playurl, signed with the page's WBI keys and sent with the page's cookies.
+const CID2 = 3;
+const WBI_KEYS = { imgKey: "7cd084941338484aae1ad9425b84077c", subKey: "4932caff0ff746eab6f01bf08b70ac45" };
+const part2Data = { ...videoData, pages: [...videoData.pages, { cid: CID2, page: 2, part: "第二部分", duration: 156 }] };
+const part2Page = `<!doctype html><meta charset="utf-8"><title>fake video page p2</title><script>
+window.__INITIAL_STATE__ = ${JSON.stringify({ videoData: part2Data })};
+window.__playinfo__ = ${JSON.stringify(playinfo)};
+window.player = { getManifest: () => ({ bvid: "${BVID}", cid: ${CID2}, p: 2 }), getSession: () => "session-2" };
+localStorage.setItem("wbi_img_urls", "https://i0.hdslb.com/bfs/wbi/${WBI_KEYS.imgKey}.png-https://i0.hdslb.com/bfs/wbi/${WBI_KEYS.subKey}.png");
+document.cookie = "DedeUserID=42; domain=.bilibili.com; path=/; secure";
+</script><h1>fake video page p2</h1>`;
+const apiCalls: { url: URL; cookie: string; signatureValid: boolean }[] = [];
+
 const server = await startMediaServer(
   { [videoName]: pair.video, [audioName]: pair.audio },
   {
@@ -77,11 +92,23 @@ const server = await startMediaServer(
         return true;
       }
       if (host === "api.bilibili.com") {
-        res.writeHead(500).end();
+        const params = Object.fromEntries([...url.searchParams].filter(([k]) => k !== "wts" && k !== "w_rid"));
+        const resigned = signWbi(params, WBI_KEYS, Number(url.searchParams.get("wts")));
+        apiCalls.push({ url, cookie: req.headers.cookie ?? "", signatureValid: resigned === url.search.slice(1) });
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "https://www.bilibili.com",
+          "Access-Control-Allow-Credentials": "true",
+        });
+        res.end(JSON.stringify(playinfo));
         return true;
       }
       if (host !== "www.bilibili.com") return false;
-      const html = url.pathname.startsWith("/video/") ? videoPage : "<!doctype html><title>home</title><h1>home</h1>";
+      const html = !url.pathname.startsWith("/video/")
+        ? "<!doctype html><title>home</title><h1>home</h1>"
+        : url.searchParams.get("p") === "2"
+          ? part2Page
+          : videoPage;
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(html);
       return true;
     },
@@ -120,6 +147,7 @@ try {
   for (const s of ["【测试】", "UP：测试 UP 主", "360P 流畅 · AVC · 约", "兼容优先", "体积优先", "登录后可下载更高清晰度"]) {
     assert.ok(text.includes(s), `popup should show "${s}":\n${text}`);
   }
+  assert.equal(await popup.locator("main").getAttribute("data-source"), "playinfo");
   await popup.screenshot({ path: path.join(out, "2-ready.png") });
   ok("video tab: probe via executeScript(MAIN) + __playinfo__ rendered title, UP, quality with size, codec setting, login hint");
 
@@ -162,6 +190,32 @@ try {
   const pageRequests = server.requests.filter((r) => r.host === "api.bilibili.com");
   assert.equal(pageRequests.length, 0, "matching __playinfo__ must not trigger a playurl request");
   ok("no playurl request when __playinfo__ belongs to the current cid");
+
+  const part2 = await h.ctx.newPage();
+  await part2.goto(`https://www.bilibili.com/video/${BVID}/?p=2`);
+  const part2Tab = await popup.evaluate(async () => {
+    const tabs = await chrome.tabs.query({ url: "https://www.bilibili.com/video/*" });
+    return tabs.find((t) => t.url?.includes("p=2"))!.id!;
+  });
+  await popup.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${part2Tab}`);
+  await popup.locator("select").waitFor();
+  assert.equal(await popup.locator("main").getAttribute("data-source"), "playurl");
+  const part2Text = await popup.locator("main").innerText();
+  assert.ok(part2Text.includes("P2 第二部分"), part2Text);
+  assert.ok(!part2Text.includes("登录后可下载更高清晰度"), "logged-in page must not show the login hint");
+  await popup.screenshot({ path: path.join(out, "5-part2-playurl.png") });
+  assert.equal(apiCalls.length, 1);
+  const call = apiCalls[0]!;
+  assert.equal(call.url.pathname, "/x/player/wbi/playurl");
+  assert.ok(call.signatureValid, `w_rid does not verify: ${call.url.search}`);
+  const sent = Object.fromEntries(call.url.searchParams);
+  assert.deepEqual(
+    { bvid: sent.bvid, cid: sent.cid, qn: sent.qn, fnval: sent.fnval, fnver: sent.fnver, fourk: sent.fourk, session: sent.session },
+    { bvid: BVID, cid: String(CID2), qn: "127", fnval: "4048", fnver: "0", fourk: "1", session: "session-2" },
+  );
+  assert.ok(!("try_look" in sent));
+  assert.match(call.cookie, /DedeUserID=42/);
+  ok(`stale __playinfo__ (other cid) -> one WBI-signed playurl call (w_rid verifies) with the page's cookies; part title and logged-in state shown`);
   console.log(`popup check passed; screenshots in ${out}`);
 } finally {
   await h.close();
