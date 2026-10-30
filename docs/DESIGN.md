@@ -320,7 +320,7 @@ interface PositionalWriter {
 
 | 权限 | 用途 |
 |---|---|
-| `activeTab`、`scripting` | 用户打开弹出窗口时，在当前 B 站标签页运行页面探针 |
+| `scripting` | 用户打开弹出窗口时，在当前 B 站标签页运行页面探针 |
 | `offscreen` | 创建下载引擎所在的 offscreen 文档 |
 | `downloads` | 把合并好的文件交给浏览器下载；确认已保存的文件是否存在 |
 | `declarativeNetRequestWithHostAccess` | 为本扩展发往 CDN 的请求设置 Referer、Origin 与 Sec-Fetch-Site |

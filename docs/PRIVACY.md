@@ -30,7 +30,7 @@ bDld 不向其他任何地址发送请求。
 
 | 权限 | 用途 |
 |---|---|
-| `activeTab`、`scripting` | 打开弹出窗口时，在当前 B 站视频页读取视频信息与播放地址 |
+| `scripting` | 打开弹出窗口时，在当前 B 站视频页读取视频信息与播放地址 |
 | `offscreen` | 在后台文档中执行下载与合并 |
 | `downloads` | 把合并好的文件交给浏览器下载，并确认已保存的文件是否存在 |
 | `declarativeNetRequestWithHostAccess` | 为本扩展发往 B 站 CDN 的请求设置与 B 站播放器相同的 Referer、Origin 请求头；不影响其他请求 |
@@ -69,7 +69,7 @@ Effective date: 2026-10-29
 
 **Network requests.** All requests are made by the user's browser, only to `www.bilibili.com` and `api.bilibili.com` (playback URLs; when the page data is not for the current video, one playback-URL request is made from the page with the page's own cookies, as when switching quality in the player) and to Bilibili's media CDNs `*.bilivideo.com`, `*.bilivideo.cn` and `*.akamaized.net` (media download, without cookies). No other destinations are contacted.
 
-**Permissions.** `activeTab` and `scripting` read the video information on the current Bilibili video page; `offscreen` runs download and merge in a background document; `downloads` saves the file and checks that a saved file still exists; `declarativeNetRequestWithHostAccess` sets the same Referer and Origin headers as Bilibili's player on this extension's own CDN requests only; `unlimitedStorage` allows temporary files of several GB; host permissions cover `bilibili.com` (page information) and `bilivideo.com`, `bilivideo.cn`, `akamaized.net` (media download).
+**Permissions.** `scripting` reads the video information on the current Bilibili video page; `offscreen` runs download and merge in a background document; `downloads` saves the file and checks that a saved file still exists; `declarativeNetRequestWithHostAccess` sets the same Referer and Origin headers as Bilibili's player on this extension's own CDN requests only; `unlimitedStorage` allows temporary files of several GB; host permissions cover `bilibili.com` (page information) and `bilivideo.com`, `bilivideo.cn`, `akamaized.net` (media download).
 
 **Third parties.** No data is shared with anyone. bDld is not affiliated with Bilibili; Bilibili's own privacy policy applies to the user's use of Bilibili.
 

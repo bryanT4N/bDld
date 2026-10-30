@@ -12,7 +12,6 @@
   },
   "background": { "service_worker": "sw.js" },
   "permissions": [
-    "activeTab",
     "scripting",
     "offscreen",
     "downloads",

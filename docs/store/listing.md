@@ -53,7 +53,6 @@ bDld 在 B 站视频页上，把正在观看的视频下载并合并为一个标
 
 | 权限 | 理由 |
 |---|---|
-| `activeTab` | 使用者点击扩展图标时，访问当前的 B 站视频标签页。 |
 | `scripting` | 在当前 B 站视频页运行页面脚本，读取视频标题、清晰度列表与播放地址。 |
 | `offscreen` | 在后台文档中执行下载与合并，并为合并好的文件生成 blob URL；service worker 不能完成这两项工作。 |
 | `downloads` | 把合并好的 MP4 文件交给浏览器下载，并确认已保存的文件是否仍然存在。 |
@@ -70,7 +69,7 @@ bDld 在 B 站视频页上，把正在观看的视频下载并合并为一个标
 - 视频信息与视频数据只在使用者的浏览器中处理，不发送到任何服务器。
 - 声明：不向第三方出售用户数据；不将用户数据用于与单一用途无关的目的；不将用户数据用于判断信用或发放贷款。
 
-隐私政策：见 `docs/PRIVACY.md`（发布时填写其公开地址）。
+隐私政策：https://github.com/bryanT4N/bDld/blob/main/docs/PRIVACY.md
 
 ---
 
@@ -115,7 +114,6 @@ Save the Bilibili video the user is watching as one MP4 file.
 
 | Permission | Justification |
 |---|---|
-| `activeTab` | Access the current Bilibili video tab when the user clicks the extension icon. |
 | `scripting` | Run a page script on the current Bilibili video page to read the title, the quality list and the playback URLs. |
 | `offscreen` | Run download and merge in a background document and create a blob URL for the finished file; a service worker cannot do either. |
 | `downloads` | Hand the merged MP4 to the browser's downloads and check that a saved file still exists. |
@@ -132,4 +130,4 @@ Remote code: none. All scripts are included in the package.
 - Video information and video data are processed only in the user's browser and are not sent to any server.
 - Certifications: user data is not sold to third parties, not used or transferred for purposes unrelated to the single purpose, and not used to determine creditworthiness or for lending.
 
-Privacy policy: `docs/PRIVACY.md` (fill in its public URL when publishing).
+Privacy policy: https://github.com/bryanT4N/bDld/blob/main/docs/PRIVACY.md

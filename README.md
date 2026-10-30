@@ -41,7 +41,7 @@ bDld 是一个 Chrome / Edge 扩展，扩展名称为「bDld - B站视频离线�
 
 | 权限 | 用途 |
 |---|---|
-| `activeTab`、`scripting` | 打开弹出窗口时，在当前 B 站视频页读取视频信息与播放地址 |
+| `scripting` | 打开弹出窗口时，在当前 B 站视频页读取视频信息与播放地址 |
 | `offscreen` | 在后台文档中执行下载与合并 |
 | `downloads` | 把合并好的文件交给浏览器下载，并确认已保存的文件是否存在 |
 | `declarativeNetRequestWithHostAccess` | 为本扩展发往 B 站 CDN 的请求设置与播放器相同的 Referer、Origin 请求头；不影响其他请求 |
