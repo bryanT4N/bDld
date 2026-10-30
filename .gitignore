@@ -1,8 +1,8 @@
 node_modules/
 dist/
 .cache/
-fixtures/
-out/
+/fixtures/
+/out/
 *.m4s
 *.mp4
 *.code-workspace

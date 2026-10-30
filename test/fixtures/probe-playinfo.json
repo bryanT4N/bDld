@@ -1,0 +1,113 @@
+{
+  "kind": "raw",
+  "source": "playinfo",
+  "loggedIn": false,
+  "fetchedAt": 1793260800000,
+  "manifest": { "bvid": "BV1LF4izVEnQ", "cid": 33291887011, "p": 1 },
+  "videoData": {
+    "bvid": "BV1LF4izVEnQ",
+    "aid": 115442339857021,
+    "videos": 1,
+    "pic": "http://i2.hdslb.com/bfs/archive/0123456789abcdef.jpg",
+    "title": "测试视频：示例标题",
+    "duration": 156,
+    "owner": { "mid": 12345, "name": "示例UP主", "face": "https://i0.hdslb.com/bfs/face/x.jpg" },
+    "cid": 33291887011,
+    "pages": [{ "cid": 33291887011, "page": 1, "from": "vupload", "part": "示例标题", "duration": 156 }]
+  },
+  "play": {
+    "quality": 32,
+    "format": "flv480",
+    "accept_quality": [32, 16],
+    "accept_description": ["480P 清晰", "360P 流畅"],
+    "dash": {
+      "duration": 156,
+      "minBufferTime": 1.5,
+      "video": [
+        {
+          "id": 32,
+          "baseUrl": "https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/11/70/33291887011/33291887011-1-100023.m4s?e=x&deadline=1793268000&os=cosovbv",
+          "base_url": "https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/11/70/33291887011/33291887011-1-100023.m4s?e=x&deadline=1793268000&os=cosovbv",
+          "backupUrl": [
+            "https://upos-hz-mirrorakam.akamaized.net/upgcxcode/11/70/33291887011/33291887011-1-100023.m4s?e=x&deadline=1793268000&os=akam",
+            "https://cn-gdfs-ct-01-01.szbdyd.com/upgcxcode/11/70/33291887011/33291887011-1-100023.m4s?e=x"
+          ],
+          "backup_url": [
+            "https://upos-hz-mirrorakam.akamaized.net/upgcxcode/11/70/33291887011/33291887011-1-100023.m4s?e=x&deadline=1793268000&os=akam",
+            "https://cn-gdfs-ct-01-01.szbdyd.com/upgcxcode/11/70/33291887011/33291887011-1-100023.m4s?e=x"
+          ],
+          "bandwidth": 357123,
+          "mimeType": "video/mp4",
+          "mime_type": "video/mp4",
+          "codecs": "avc1.64001F",
+          "width": 852,
+          "height": 480,
+          "frameRate": "25.000",
+          "frame_rate": "25.000",
+          "sar": "N/A",
+          "startWithSap": 1,
+          "start_with_sap": 1,
+          "SegmentBase": { "Initialization": "0-954", "indexRange": "955-1358" },
+          "segment_base": { "initialization": "0-954", "index_range": "955-1358" },
+          "codecid": 7
+        },
+        {
+          "id": 32,
+          "baseUrl": "https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/11/70/33291887011/33291887011-1-100110.m4s?deadline=1793268000",
+          "backupUrl": null,
+          "bandwidth": 210456,
+          "codecs": "hev1.1.6.L120.90",
+          "width": 852,
+          "height": 480,
+          "frameRate": "25.000",
+          "segment_base": { "initialization": "0-1108", "index_range": "1109-1512" },
+          "codecid": 12
+        },
+        {
+          "id": 16,
+          "base_url": "https://xy1x2x3x4xy.mcdn.bilivideo.cn:8082/v1/resource/33291887011-1-100100.m4s?deadline=1793268000",
+          "backup_url": [],
+          "bandwidth": 120000,
+          "codecs": "av01.0.00M.10.0.110.01.01.01.0",
+          "width": 640,
+          "height": 360,
+          "frame_rate": "25.000",
+          "segment_base": { "initialization": "0-1010", "index_range": "1011-1414" },
+          "codecid": 13
+        },
+        {
+          "id": 16,
+          "baseUrl": "https://cn-gdfs-ct-01-01.szbdyd.com/only-pcdn.m4s",
+          "bandwidth": 1,
+          "codecs": "avc1.64001E",
+          "width": 640,
+          "height": 360,
+          "segment_base": { "initialization": "0-1", "index_range": "2-3" },
+          "codecid": 7
+        }
+      ],
+      "audio": [
+        {
+          "id": 30216,
+          "baseUrl": "https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/11/70/33291887011/33291887011-1-30216.m4s?deadline=1793268000",
+          "backupUrl": ["https://upos-hz-mirrorakam.akamaized.net/upgcxcode/11/70/33291887011/33291887011-1-30216.m4s?deadline=1793268000"],
+          "bandwidth": 67133,
+          "codecs": "mp4a.40.2",
+          "SegmentBase": { "Initialization": "0-817", "indexRange": "818-1233" },
+          "codecid": 0
+        },
+        {
+          "id": 30280,
+          "baseUrl": "https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/11/70/33291887011/33291887011-1-30280.m4s?deadline=1793268000",
+          "bandwidth": 191000,
+          "codecs": "mp4a.40.2",
+          "segment_base": { "initialization": "0-817", "index_range": "818-1233" },
+          "codecid": 0
+        }
+      ],
+      "dolby": { "type": 0, "audio": null },
+      "flac": null
+    },
+    "support_formats": [{ "quality": 32, "format": "flv480", "new_description": "480P 清晰" }]
+  }
+}

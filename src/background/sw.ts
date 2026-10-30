@@ -1,5 +1,6 @@
 import { addressedTo, isTasksChanged, send, type DownloadOutcome, type Responses, type SwRequest } from "../shared/messages";
-import type { DownloadTask } from "../shared/types";
+import { normalizeProbe } from "../probe/normalize";
+import type { DownloadTask, ProbeResult } from "../shared/types";
 
 const HEADER_RULE_ID = 1;
 const OFFSCREEN_URL = "offscreen.html";
@@ -52,6 +53,19 @@ async function ensureEngine(): Promise<void> {
   await creating;
 }
 
+const VIDEO_PAGE = /^https:\/\/www\.bilibili\.com\/video\//;
+
+async function probeTab(tabId: number): Promise<ProbeResult> {
+  const tab = await chrome.tabs.get(tabId);
+  if (!tab.url || !VIDEO_PAGE.test(tab.url)) return { kind: "not-video-page" };
+  try {
+    const [injection] = await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", files: ["probe.js"] });
+    return normalizeProbe(injection?.result);
+  } catch (e) {
+    return { kind: "error", message: `无法读取页面信息：${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
 function updateBadge(tasks: DownloadTask[]): void {
   const active = tasks.find((t) => ["preparing", "downloading", "finalizing", "saving"].includes(t.state.phase));
   let text = "";
@@ -67,7 +81,7 @@ function updateBadge(tasks: DownloadTask[]): void {
 async function handle(msg: SwRequest): Promise<Responses["sw"][SwRequest["type"]]> {
   switch (msg.type) {
     case "probe":
-      return { kind: "error", message: "尚未实现" };
+      return probeTab(msg.tabId);
     case "start":
       await ensureHeaderRule();
       await ensureEngine();
