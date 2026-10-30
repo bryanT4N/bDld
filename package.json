@@ -1,0 +1,25 @@
+{
+  "name": "bdld",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Save the Bilibili video you are watching as one standard MP4.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke": "npm run build && node scripts/run-ts.mjs scripts/smoke.ts",
+    "verify:remux": "node scripts/run-ts.mjs scripts/verify-remux.ts",
+    "check:engine": "npm run build && node scripts/run-ts.mjs scripts/engine-check.ts",
+    "e2e": "npm run build && node scripts/run-ts.mjs scripts/e2e.ts"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^20.19.43",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.64.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}

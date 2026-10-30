@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "bDld",
+  "description": "把正在看的 B 站视频保存为一个 MP4 文件",
+  "version": "0.1.0",
+  "minimum_chrome_version": "116",
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "action": {
+    "default_title": "bDld",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/16.png", "32": "icons/32.png" }
+  },
+  "background": { "service_worker": "sw.js" },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "offscreen",
+    "downloads",
+    "declarativeNetRequestWithHostAccess",
+    "storage",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "*://*.bilibili.com/*",
+    "*://*.bilivideo.com/*",
+    "*://*.bilivideo.cn/*",
+    "*://*.akamaized.net/*"
+  ]
+}
