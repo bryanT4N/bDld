@@ -44,7 +44,7 @@ try {
     const serverRate = (bytes - lastBytes) / 1024;
     lastBytes = bytes;
     let shown = "(popup closed)";
-    if (popup) shown = (await popup.locator(".task").innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+    if (popup) shown = (await popup.locator(".action").innerText().catch(() => "")).replace(/\s+/g, " ").trim();
     rows.push(`${String(second).padStart(4)}s  server ${serverRate.toFixed(0).padStart(6)} KB/s  popup: ${shown}`);
     console.log(rows.at(-1));
     if (second === CLOSE_AT) {

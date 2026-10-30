@@ -106,6 +106,7 @@ function message(...lines: Child[]): void {
 }
 
 function render(): void {
+  expanded = app.querySelector<HTMLDetailsElement>("details.choice")?.open ?? expanded;
   actionSlot = undefined;
   const s = subject();
   rendered = s && viewKey(s);
@@ -162,7 +163,7 @@ function render(): void {
       );
     choice = h(
       "details",
-      { class: "choice", open: expanded, onToggle: (e) => (expanded = (e.target as HTMLDetailsElement).open) },
+      { class: "choice", open: expanded },
       h("summary", {}, summary),
       h("div", { class: "choice-body" }, select, h("div", { class: "segmented", role: "group", "aria-label": "编码" }, ...codecsAt(offer, sel.qn).map(codecButton))),
     );
@@ -281,10 +282,10 @@ chrome.runtime.onMessage.addListener((msg: unknown) => {
   return false;
 });
 
+/** Tasks load before the probe so a video's task always decides its selection before any default. */
 async function main(): Promise<void> {
-  const pending = load();
   onTasks(await send({ to: "sw", type: "tasks" }));
-  await pending;
+  await load();
 }
 
 void main();

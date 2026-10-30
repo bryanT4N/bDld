@@ -36,7 +36,8 @@ try {
   const popup = await h.ctx.newPage();
   const checked = () => popup.locator(".choice summary, p.choice").first().innerText();
   const expand = async () => {
-    if (!(await popup.locator("details.choice").getAttribute("open").then((v) => v !== null))) await popup.locator(".choice summary").click();
+    if (!(await popup.locator("select").isVisible())) await popup.locator(".choice summary").click();
+    await popup.locator("select").waitFor();
   };
   await popup.setViewportSize({ width: 340, height: 420 });
 
