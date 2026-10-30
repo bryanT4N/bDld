@@ -2,7 +2,7 @@
 
 bDld 是一个浏览器扩展：在 B 站视频页上，一键把正在看的视频保存为一个完整的 MP4 文件。
 
-本文写给参与开发的人，说明设计依据、模块划分和数据结构。面向使用者的说明见 README。
+本文写给参与开发的人，说明设计依据、模块划分和数据结构。面向使用者的说明见 README，版本记录见 CHANGELOG。
 
 ## 1. 目标与约束
 
@@ -73,7 +73,7 @@ moof + mdat     ← 重复，每对一段
 
 - `window.__INITIAL_STATE__.videoData`：`bvid`、`aid`、`cid`、`title`、`pages`（分 P 列表）、`owner`、`duration`、`pic`。
 - `window.__playinfo__.data`：服务端渲染时附带的播放地址，结构与播放地址接口的 `data` 相同（`dash.video[]`、`dash.audio[]`、`accept_quality` 等）。**它只对应页面首次加载的那个视频**；站内跳转到其他视频或分 P 后不会更新。未登录时其中最高只有 480P。
-- `window.player`：播放器对象。`getManifest()` 返回当前播放的 `bvid`、`cid`、`p`；`getSession()` 返回会话标识。
+- `window.player`：播放器对象。`getManifest()` 返回当前播放的 `bvid`、`cid`、`p`；`getSession()` 返回会话标识；`getQuality()`（`nowQ`、`realQ`）与 `getMediaInfo()`（`playUrl`）用于判断正在播放的清晰度与编码（返回结构见第 8 节的说明）。
 - `localStorage.wbi_img_urls`：WBI 签名所需的两个密钥图片地址，以「-」连接。
 
 播放器在站内跳转或切换清晰度时调用 `https://api.bilibili.com/x/player/wbi/playurl`（需 WBI 签名）。播放器下载媒体时，对同一地址发出多次 Range 请求，视频与音频同时进行。
@@ -91,7 +91,7 @@ moof + mdat     ← 重复，每对一段
 
 ```
 弹出窗口 (popup)
-   │ ① 询问当前标签页的视频
+   │ ① 查询任务列表；询问当前标签页的视频
    ▼
 service worker ── chrome.scripting.executeScript(world: MAIN) ──► 视频页
    │                                              读取页面数据；必要时以页面身份调用 playurl
@@ -108,10 +108,10 @@ chrome.downloads.download(blob URL) ──► 浏览器下载列表 ──► �
 
 各部分职责：
 
-- **popup**：显示视频信息、清晰度选择、下载按钮、进度。只做展示和转发，不持有任务状态。
+- **popup**：显示视频信息、清晰度与编码、下载进度。先显示引擎的任务，再显示页面探针的结果。只做展示和转发，不持有任务状态。
 - **service worker**：消息路由；管理 offscreen 文档的生命周期；维护 DNR 会话规则；调用 `chrome.downloads`；更新图标角标。任务状态的唯一来源是 offscreen 引擎，service worker 只转发。
-- **页面探针（page probe）**：一个通过 `executeScript` 注入 MAIN world 的函数，读取第 2.3 节的数据，返回可序列化的结果。不常驻页面，不改动页面的任何函数。
-- **offscreen 下载引擎**：执行下载任务，持有任务状态机；因为 MV3 的 service worker 会被回收，也不能创建 blob URL，所以长任务放在 offscreen 文档（reason：`BLOBS`）。
+- **页面探针（page probe）**：通过 `executeScript` 注入 MAIN world 的脚本（`probe.js`），读取第 2.3 节的数据，返回可序列化的结果。不常驻页面，不改动页面的任何函数。返回的数据在 service worker 中校验。
+- **offscreen 下载引擎**：执行下载任务，持有任务状态机。MV3 的 service worker 会被回收，也不能创建 blob URL，所以长任务放在 offscreen 文档（reason：`BLOBS`）。
 - **remux 模块**：纯函数与流式类，不依赖任何扩展 API，可在 Node 中单独测试。
 
 ## 4. 关键决定
@@ -120,8 +120,12 @@ chrome.downloads.download(blob URL) ──► 浏览器下载列表 ──► �
 
 按顺序：
 
-1. 页面的 `__playinfo__` 属于当前视频（其地址路径中的 cid 等于 `player.getManifest().cid`）时，直接使用，不发任何额外请求。
-2. 否则由页面探针在页面环境内调用 `/x/player/wbi/playurl`，带页面自身的 Cookie，参数与播放器切换清晰度时相同（`bvid`、`cid`、`qn=127`、`fnval=4048`、`fnver=0`、`fourk=1`、`session` 等），WBI 签名使用 `localStorage.wbi_img_urls` 中的密钥。这一次请求与用户在播放器里切换一次清晰度等价。
+1. 页面的 `__playinfo__` 属于当前视频（其视频地址路径中的 cid 等于 `player.getManifest().cid`）时，直接使用，不发任何额外请求。
+2. 否则由页面探针在页面环境内调用 `/x/player/wbi/playurl`，带页面自身的 Cookie，参数为 `bvid`、`cid`、`qn=127`、`fnval=4048`、`fnver=0`、`fourk=1` 与 `session`，WBI 签名使用 `localStorage.wbi_img_urls` 中的密钥。这一次请求与用户在播放器里切换一次清晰度等价。
+
+页面探针同时读取播放器正在播放的清晰度与编码（见 4.5）。
+
+service worker 校验探针返回的数据：字段类型、字节范围、编码；只保留主机在扩展权限内的媒体地址（`bilivideo.com`、`bilivideo.cn`、`akamaized.net`），其余地址（如 PCDN）舍弃。
 
 不采用的做法：
 
@@ -132,19 +136,27 @@ chrome.downloads.download(blob URL) ──► 浏览器下载列表 ──► �
 ### 4.2 媒体下载
 
 - 在 offscreen 文档中用 `fetch` 下载。扩展对 CDN 域名有主机权限，不受 CORS 限制。
-- 用一条 DNR 会话规则，为**本扩展自己发起的**、发往 B 站媒体 CDN 的请求设置 `Referer: https://www.bilibili.com/`、`Origin: https://www.bilibili.com`、`Sec-Fetch-Site: cross-site`，使请求头与播放器一致。条件用 `initiatorDomains: [chrome.runtime.id]` 限定，用户正常浏览时的请求不受影响。User-Agent 等其余请求头由浏览器生成，不做修改。
+- 一条 DNR 会话规则（固定 ID）为**本扩展自己发起的**、发往 B 站媒体 CDN 的请求设置 `Referer: https://www.bilibili.com/`、`Origin: https://www.bilibili.com`、`Sec-Fetch-Site: cross-site`，使请求头与播放器一致。条件用 `initiatorDomains: [chrome.runtime.id]` 限定，用户正常浏览时的请求不受影响。User-Agent 等其余请求头由浏览器生成，不做修改。
 - 媒体请求设 `credentials: "omit"`、`cache: "no-store"`，与播放器一致，也避免缓存条件请求。
-- 分段方式与播放器相同：先请求 `segment_base` 给出的初始化段和索引，再按 `sidx` 的分段边界，每次请求若干段（合计约 4 MiB）的字节范围。
-- 视频流与音频流各一个连接，同时进行（与播放器相同），不再增加并发。
-- 一个请求失败时，按「主地址 → 备用地址」轮换重试，指数退避，最多 5 次。返回 403 且已超过 `deadline` 时，任务以「地址过期，请重新下载」结束。
-- 返回内容不是媒体（状态码不是 206，或 `Content-Type` 是 `text/html`）时，任务立即失败并说明原因，**不把错误页面当成视频保存**。
+- 分段方式与播放器相同：先用一个请求取 `segment_base` 给出的初始化段与索引，再按 `sidx` 的分段边界，每次请求若干段（合计约 4 MiB，不拆分段）的字节范围。
+- 视频流与音频流各一个连接，同时进行，不再增加并发。每一路在合并当前范围时，下一个范围的请求已经发出。
+- 网络错误（连接失败、连接中断、数据不完整）时，按「主地址 → 备用地址」轮换重试，指数退避（1、2、4、8 秒），最多 5 次。
+- 返回 403 且已超过地址的 `deadline` 时，任务以「地址过期」结束。
+- 返回内容不是媒体（状态码不是 206、`Content-Type` 是 `text/html`，或 `Content-Range` 与请求不符）时，任务立即失败，不重试，**不把错误页面当成视频保存**。
 
 ### 4.3 合并与保存
 
 - **输出普通 MP4，而不是分片 MP4。** 普通 MP4 的兼容性和拖动响应最好。做法：先写 `ftyp` 和一个 64 位长度的 `mdat` 头，把两路样本按解码时间交错写入 `mdat`，同时在内存中累积样本表；全部写完后在文件末尾写 `moov`，再回到 `mdat` 头写入真实长度。样本表每个样本约 16 字节，两小时 4K60 视频约 7 MB。
-- **按编码无关的方式合并。** `stsd`（样本描述，含 avcC/hvcC/av1C/esds/dfLa/dec3 以及 HDR 等附加信息）原样从源文件复制，`tkhd`、`edts`、`mdhd`、`hdlr`、`vmhd`/`smhd`、`dinf` 也从源文件复制，只重建 `stts`、`ctts`、`stss`、`stsz`、`stsc`、`stco`/`co64`，并更新各处时长和 `track_ID`。因此支持 B 站提供的所有编码，且不丢失源文件的任何编码参数。
-- **写入 OPFS 临时文件**（扩展自己的源私有文件系统）：磁盘支撑，可以按位置写入，不需要用户授权。扩展申请 `unlimitedStorage`。
-- **交给浏览器下载**：完成后从 OPFS 文件得到 `File`（磁盘支撑的 Blob），创建 blob URL，由 service worker 调用 `chrome.downloads.download`。下载完成或失败后撤销 URL、删除临时文件。代价是保存时多一次磁盘复制，换来与普通下载一致的体验。
+- **交错规则**：总是先写「下一段起始时间（以秒计）更早」的那一路，每一路最多缓冲一段。
+- **按编码无关的方式合并。** `stsd`（样本描述，含 avcC/hvcC/av1C/esds 以及 HDR 等附加信息）、`tkhd`、`edts`、`mdhd`、`hdlr`、`vmhd`/`smhd`、`dinf` 从源文件复制，只重建 `stts`、`ctts`、`stss`、`stsz`、`stsc`、`stco`/`co64`，并更新各处时长和 `track_ID`。
+  - `tfhd`/`trun` 的默认值与每样本字段、sample-description-index、default-base-is-moof 与 base-data-offset 按标准通用处理；`tfdt` 支持版本 0 与 1；源文件的 `track_ID` 不限。
+  - 同步样本：样本标志中 non-sync 为 0，且 sample_depends_on 不为 1。音频全部为同步样本，不写 `stss`。
+  - CTS 偏移出现负值时写 `ctts` 版本 1。
+  - `elst` 的 `media_time` 原样保留；`segment_duration` 为 0（分片文件表示「直到结束」）时，改为轨道的媒体时长（换算到影片时基 1000）。
+  - 相邻分片之间解码时间的空隙并入前一个样本的时长；分片重叠时报错。
+  - chunk 偏移超过 4 GiB 时写 `co64`。
+- **写入 OPFS 临时文件**（扩展自己的源私有文件系统）：磁盘支撑，可以按位置写入，不需要用户授权。开始下载前检查剩余配额。扩展申请 `unlimitedStorage`。
+- **交给浏览器下载**：完成后从 OPFS 文件得到 `File`（磁盘支撑的 Blob），创建 blob URL，由 service worker 调用 `chrome.downloads.download`（`conflictAction: "uniquify"`，同名文件不覆盖，由浏览器追加序号）。下载完成或失败后撤销 URL、删除临时文件。代价是保存时多一次磁盘复制，换来与普通下载一致的体验。
 
 不采用的做法：
 
@@ -155,22 +167,61 @@ chrome.downloads.download(blob URL) ──► 浏览器下载列表 ──► �
 
 ### 4.4 文件名
 
-`{标题}[ - P{n} {分P标题}] [{BV号}] {清晰度}.mp4`。移除 Windows 文件名中的非法字符（`\ / : * ? " < > |` 和控制字符），去掉末尾的点和空格，整体截断到 150 个字符以内（BV 号和清晰度部分保留）。
+`{标题}[ - P{n} {分P标题}] [{BV号}] {清晰度}.mp4`。移除 Windows 文件名中的非法字符（`\ / : * ? " < > |` 和控制字符），去掉末尾的点和空格，整体截断到 150 个字符以内（BV 号和清晰度部分保留，不拆开代理对）。
 
 ### 4.5 清晰度与编码的默认选择
 
-- 清晰度：默认选当前账号可用的最高清晰度，可在弹出窗口中改选。
-- 视频编码：默认「兼容优先」，同一清晰度下按 AVC → HEVC → AV1 选择；设置中可改为「体积优先」，按 AV1 → HEVC → AVC 选择。
-- 音频：默认选码率最高的 AAC。Hi-Res（FLAC）与杜比全景声留到后续版本作为选项。
+缺省选择播放器正在播放的流，依次按以下方式确定：
+
+1. `player.getMediaInfo().playUrl` 的文件名中的格式号（`{cid}-1-{格式号}.m4s`）与某个可下载视频流的地址相同：选择该流（清晰度与编码都确定）。
+2. 否则，`player.getQuality()` 的 `realQ`（为 0 时取 `nowQ`）是可下载的清晰度：选择该清晰度，编码依次取 AVC、HEVC、AV1。
+3. 否则，选择最高清晰度，编码依次取 AVC、HEVC、AV1。
+
+探针结果的 `playing` 字段记录采用了哪一种方式。使用者可在弹出窗口中改选清晰度与该清晰度下提供的编码；扩展不保存这一选择。
+
+音频选择码率最高的 AAC。Hi-Res（FLAC）与杜比全景声留到后续版本。
+
+某个视频已有任务（排队、进行中或已结束）时，弹出窗口显示该任务所选的清晰度与编码，不重新计算缺省值；任务进行中时不能改选。
+
+### 4.6 弹出窗口
+
+- 视频信息：封面、标题、分 P 标题、UP 主。
+- 选择：一行摘要（清晰度 · 编码 · 预计大小），预计大小 = (视频码率 + 音频码率) × 时长；展开后可改选清晰度与编码。
+- 操作区只有一个操作：
+  - 未下载：「下载」；
+  - 下载中：进度条与一行状态（百分比 · 已下载/总大小 · 速度 · 剩余时间）、「取消」；
+  - 已保存：「在文件夹中显示」，以及「重新下载」；改选其他清晰度或编码后，操作变为「下载」。
+- 未登录时提示「登录后可下载更高清晰度」。
+- 当前标签页不是视频页、或页面探针尚未返回时，显示进行中的任务。
+
+### 4.7 已保存文件的确认
+
+任务完成后，弹出窗口用 `chrome.downloads.search({ id })` 查询下载项。文件已删除或移动、下载项已被清除、或下载未完成时，视为该视频未下载：显示「下载」，选择按 4.5 重新确定。
+
+`search()` 会让浏览器重新检查文件是否存在，但返回的 `exists` 可能是检查之前的值；文件被删除的结果稍后由 `downloads.onChanged` 通知。浏览器对同一下载项的检查有时间间隔（实测约 10 秒）。弹出窗口在显示已保存文件期间每 2 秒查询一次，并监听 `onChanged`。
+
+### 4.8 进度与速度
+
+下载速度由引擎计算：把收到的字节计入 250 毫秒的时间桶，取最近 10 秒（下载开始不足 10 秒时取已用时间）的字节数除以时间；没有数据的时段计为 0。下载期间引擎每秒刷新一次状态并通知弹出窗口。因此速度在网络停顿时下降、恢复后回升，不会停在旧值或归零重算；弹出窗口重新打开时读到的是当前值。
+
+每个分段请求都是一次新请求，CDN 的首字节延迟会造成短暂停顿；10 秒的窗口覆盖多个分段，显示的速度接近实际平均速度。
 
 ## 5. 数据结构
 
 ```ts
-// 页面探针的返回结果（跨越 executeScript 边界，在 service worker 中校验）
+// 页面探针的结果（跨越 executeScript 边界，在 service worker 中校验后得到）
 type ProbeResult =
   | { kind: "not-video-page" }
   | { kind: "error"; message: string }
-  | { kind: "ok"; video: VideoInfo; offer: PlayOffer };
+  | { kind: "ok"; video: VideoInfo; offer: PlayOffer; playing: Playing };
+
+// 播放器正在播放的流，以及确定方式（4.5）
+type Playing =
+  | { via: "player-stream"; qn: number; codec: VideoCodec }
+  | { via: "player-quality"; qn: number }
+  | { via: "unknown" };
+
+interface Selection { qn: number; codec: VideoCodec }   // 弹出窗口中的选择
 
 interface VideoInfo {
   bvid: string; aid: number; cid: number; p: number;
@@ -188,13 +239,14 @@ interface PlayOffer {
 
 interface StreamCommon {
   urls: string[];                      // 主地址在前，备用地址在后
-  bandwidth: number;                   // bit/s，用于估算体积
+  bandwidth: number;                   // bit/s，用于估算大小
   codecs: string;
   initRange: [number, number];         // segment_base.initialization
   indexRange: [number, number];        // segment_base.index_range
 }
+type VideoCodec = "avc" | "hevc" | "av1";
 interface VideoStream extends StreamCommon {
-  qn: number; codec: "avc" | "hevc" | "av1";
+  qn: number; codec: VideoCodec;
   width: number; height: number; frameRate: string;
 }
 interface AudioStream extends StreamCommon { id: number; }
@@ -227,18 +279,23 @@ remux 模块的数据：
 
 ```ts
 interface TrackInit {           // 从 m4s 的 moov 解析
+  trackId: number;              // 源文件的 track_ID，用于匹配 tfhd
   timescale: number;            // mdhd
+  movieTimescale: number;       // 源文件 mvhd，elst segment_duration 的单位
   handler: "vide" | "soun";
   boxes: { tkhd: Uint8Array; edts?: Uint8Array; mdhd: Uint8Array; hdlr: Uint8Array;
            mediaHeader: Uint8Array; dinf: Uint8Array; stsd: Uint8Array };
-  trex: { duration: number; size: number; flags: number };
+  trex: { sampleDescriptionIndex: number; duration: number; size: number; flags: number };
 }
 
-interface Fragment {            // 一对 moof + mdat
+interface Fragment {            // 一对 moof + mdat 中属于该轨道的部分
   baseDecodeTime: bigint;       // tfdt
+  sampleDescriptionIndex: number;
   samples: { duration: number; size: number; flags: number; cto: number }[];
   payload: Uint8Array;          // 该段全部样本的字节，按顺序连续
 }
+
+interface Segment { offset: number; size: number; duration: number }   // 一个 sidx 引用
 ```
 
 合并器的接口：
@@ -248,7 +305,7 @@ class Mp4Writer {
   constructor(out: PositionalWriter, tracks: TrackInit[]);
   async start(): Promise<void>;                          // 写 ftyp 与 mdat 头
   async writeFragment(track: number, f: Fragment): Promise<void>;
-  async finish(): Promise<void>;                         // 写 moov，回填 mdat 长度
+  async finish(): Promise<void>;                         // 写 moov，回填 mdat 长度，关闭输出
 }
 
 interface PositionalWriter {
@@ -257,7 +314,7 @@ interface PositionalWriter {
 }
 ```
 
-调度两路输入时，总是先写「下一段起始时间（以秒计）更早」的那一路，保证交错写入，且每一路最多缓冲一段。
+扩展各部分之间的消息以 `to` 字段区分接收方（`sw`、`engine`），引擎以 `tasks-changed` 广播任务列表；定义在 `src/shared/messages.ts`。
 
 ## 6. 权限
 
@@ -265,27 +322,38 @@ interface PositionalWriter {
 |---|---|
 | `activeTab`、`scripting` | 用户打开弹出窗口时，在当前 B 站标签页运行页面探针 |
 | `offscreen` | 创建下载引擎所在的 offscreen 文档 |
-| `downloads` | 把合并好的文件交给浏览器下载 |
-| `declarativeNetRequestWithHostAccess` | 为本扩展发往 CDN 的请求设置 Referer 与 Origin |
-| `storage`、`unlimitedStorage` | 保存设置；OPFS 临时文件 |
-| 主机权限 `*://*.bilibili.com/*`、`*://*.bilivideo.com/*`、`*://*.bilivideo.cn/*`、`*://*.akamaized.net/*` | 页面探针；媒体下载 |
+| `downloads` | 把合并好的文件交给浏览器下载；确认已保存的文件是否存在 |
+| `declarativeNetRequestWithHostAccess` | 为本扩展发往 CDN 的请求设置 Referer、Origin 与 Sec-Fetch-Site |
+| `unlimitedStorage` | OPFS 临时文件可能达到 GB 级 |
+| 主机权限 `*://*.bilibili.com/*` | 页面探针；读取标签页地址以判断是否为视频页 |
+| 主机权限 `*://*.bilivideo.com/*`、`*://*.bilivideo.cn/*`、`*://*.akamaized.net/*` | 媒体下载（B 站的主 CDN 与备用 CDN） |
 
-不申请 `tabs`、`cookies`、`webRequest`、`<all_urls>`。
+不申请 `tabs`、`cookies`、`storage`、`webRequest`、`<all_urls>`。
 
 ## 7. 幂等与恢复
 
 - 创建 offscreen 文档前先检查是否已存在。
 - DNR 会话规则用固定 ID，每次先移除再添加。
-- 引擎启动时清理 OPFS 中所有不属于进行中任务的临时文件（上次浏览器异常退出遗留的文件）。
-- service worker 被回收后重新启动时，向 offscreen 引擎查询任务列表，不自行保存任务状态。
-- 首个版本不支持断点续传；浏览器关闭时进行中的任务视为失败。
+- 引擎启动时删除 OPFS 中的所有临时文件（上次浏览器异常退出遗留的文件）；此时还没有任何任务。
+- 任务只保存在引擎的内存中，不写入存储；service worker 被回收后重新启动时，向引擎查询任务列表。浏览器关闭后任务列表清空，进行中的任务视为失败。
+- 每个视频只保留最近一个已结束的任务（完成、失败或取消）；已结束任务合计最多保留 20 个。
+- 浏览器下载的事件可能早于下载 ID 送达引擎，引擎按下载 ID 暂存这类事件。
+- 首个版本不支持断点续传。
 
 ## 8. 验证
 
-- **remux 单元测试**（Node，Vitest）：box 解析与写出；默认值与每样本字段的组合；`elst` 与 CTS 偏移；64 位长度；`stco` 与 `co64` 的切换。
-- **remux 对照测试**（脚本，可重复运行）：用真实的 B 站 m4s 样本，分别由 bDld 和 `ffmpeg -c copy` 合并，用 `ffprobe -show_packets -show_data_hash md5` 逐包比较两路流的 pts、dts、时长、关键帧标志和数据哈希，必须完全一致。
-- **端到端测试**（Playwright 加载未打包扩展）：打开一个公开视频页，经 service worker 发起下载，确认文件出现在下载目录、时长与页面一致、`ffprobe` 能读出两路流。
-- **人工验证**：在已登录的 Chrome 中加载扩展，下载一个高清晰度视频，用系统播放器播放并拖动进度条。
+| 命令 | 内容 |
+|---|---|
+| `npm test` | 单元测试：box 解析与写出；默认值与每样本字段的组合；`elst` 与 CTS 偏移；64 位长度；`stco` 与 `co64`；sidx 与分段计划；MD5（RFC 1321 测试向量）与 WBI 签名；探针结果校验；清晰度与编码选择；文件名；速度计算 |
+| `npm run verify:remux` | 用 ffmpeg 生成的 AVC、HEVC（含 B 帧）与 AAC 样本，以及真实的 B 站 m4s 样本（AVC、HEVC、AV1 与 AAC），分别由 bDld 和 `ffmpeg -c copy` 合并，用 `ffprobe -show_packets -show_data_hash md5` 逐包比较 pts、dts、时长、关键帧标志、大小和数据哈希，并比较各路流的起始时间与时长，确认输出为普通 MP4。ffmpeg 命令行会把每个输入的起始时间移到 0，bDld 保留源文件的时间线；脚本同时与 `-copyts` 的结果逐包比较 |
+| `npm run check:engine` | 本地服务器模拟 CDN：主地址断开后改用备用地址、567 拦截页、地址过期、排队与取消、OPFS 临时文件清理；保存的文件与 Node 中合并的结果逐字节相同 |
+| `npm run check:popup` | 把 B 站各域名解析到本地 HTTPS 服务器，离线运行完整流程：页面探针、弹出窗口各状态、DNR 改写后的请求头、playurl 签名、已保存文件的确认与重新下载 |
+| `npm run check:speed` | 限速的本地 CDN 上下载约 180 MB，中途关闭再打开弹出窗口，逐秒对照服务器发送速度与显示的速度 |
+| `npm run e2e` | 打开一个公开视频页，下载一次，用 ffprobe 检查两路流、时长与普通 MP4 结构，确认每个媒体响应都是 206 且 DNR 规则存在 |
+
+人工验证：在已登录的 Chrome 中加载扩展，下载一个高清晰度视频，用系统播放器播放并拖动进度条。
+
+尚未在真实页面上确认：`player.getQuality()` 与 `player.getMediaInfo()` 的返回结构。一次真实页面测试中，4.5 的前两种方式都未生效，采用了第三种；`e2e` 会输出播放器返回的原始值，供下次确认。
 
 ## 9. 扩展方向
 
