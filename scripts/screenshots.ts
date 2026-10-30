@@ -6,7 +6,7 @@ import { openVideoTab, startFakeSite } from "./lib/fake-site";
 import { largeVideo, mediaPair, syntheticAudio } from "./lib/fixtures";
 
 // Release screenshots from the offline fake site: neutral title, owner and cover, so no
-// Bilibili content appears. Writes docs/images (README) and docs/store (store listing).
+// Bilibili content appears. Writes the README image to docs/images and the store listing images to docs/store.
 const images = path.join(root, "docs", "images");
 const store = path.join(root, "docs", "store");
 fs.mkdirSync(images, { recursive: true });
@@ -38,8 +38,9 @@ const h = await site.launch({ deviceScaleFactor: 2 });
 
 const shots: Record<string, Buffer> = {};
 async function capture(popup: Page, name: string): Promise<void> {
-  shots[name] = await popup.locator("main").screenshot({ path: path.join(images, `popup-${name}.png`) });
-  console.log(`docs/images/popup-${name}.png`);
+  const readme = name === "downloading";
+  shots[name] = await popup.locator("main").screenshot(readme ? { path: path.join(images, `popup-${name}.png`) } : {});
+  if (readme) console.log(`docs/images/popup-${name}.png`);
 }
 
 const STORE_SHOTS: [string, string, string][] = [
