@@ -22,7 +22,9 @@ jobs:
       - run: npm run package
       - name: Check tag matches package version
         run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - name: Extract release notes
+        run: awk -v v="${GITHUB_REF_NAME#v}" '/^## \[/{p=index($0,"["v"]")>0;next} p' CHANGELOG.md > notes.md
       - uses: softprops/action-gh-release@v2
         with:
           files: release/bDld-*.zip
-          body_path: CHANGELOG.md
+          body_path: notes.md

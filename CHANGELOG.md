@@ -2,6 +2,11 @@
 
 格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.1] - 2026-10-30
+
+- 弹出窗口增加项目主页链接。
+- 移除未使用的 `activeTab` 权限。
+
 ## [0.1.0] - 2026-10-29
 
 首个版本。
