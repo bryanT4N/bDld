@@ -4,6 +4,10 @@
   "private": true,
   "description": "Save the Bilibili video you are watching as one standard MP4.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OWNER/bdld.git"
+  },
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -14,7 +18,8 @@
     "check:popup": "npm run build && node scripts/run-ts.mjs scripts/popup-check.ts",
     "check:speed": "npm run build && node scripts/run-ts.mjs scripts/speed-check.ts",
     "check:engine": "npm run build && node scripts/run-ts.mjs scripts/engine-check.ts",
-    "e2e": "npm run build && node scripts/run-ts.mjs scripts/e2e.ts"
+    "e2e": "npm run build && node scripts/run-ts.mjs scripts/e2e.ts",
+    "package": "node scripts/build.mjs && node scripts/package.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.3.7",

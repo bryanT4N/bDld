@@ -6,3 +6,4 @@ dist/
 *.m4s
 *.mp4
 *.code-workspace
+/release/

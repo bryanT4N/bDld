@@ -11,7 +11,9 @@ export interface Harness {
   close(): Promise<void>;
 }
 
+/** Loads dist/, or the unpacked extension in BDLD_EXTENSION_DIR (e.g. an extracted release zip). */
 export async function launchExtension(extraArgs: string[] = []): Promise<Harness> {
+  const extension = process.env.BDLD_EXTENSION_DIR ?? dist;
   const profile = tempDir("bdld-profile-");
   const downloadsDir = tempDir("bdld-downloads-");
   fs.mkdirSync(path.join(profile, "Default"), { recursive: true });
@@ -24,7 +26,7 @@ export async function launchExtension(extraArgs: string[] = []): Promise<Harness
     headless: false,
     acceptDownloads: true,
     downloadsPath: downloadsDir,
-    args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`, ...extraArgs],
+    args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, ...extraArgs],
   });
   const sw = ctx.serviceWorkers()[0] ?? (await ctx.waitForEvent("serviceworker", { timeout: 15_000 }));
   // Playwright's download handling renames files (to GUIDs, or after the blob URL), which would

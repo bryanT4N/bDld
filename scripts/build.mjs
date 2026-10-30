@@ -46,7 +46,11 @@ fs.writeFileSync(
   `(() => {\n"use strict";\n${probeCode.replace(exportLine, "")}return probePage();\n})();\n`,
 );
 
-for (const file of ["manifest.json", "popup/popup.html", "popup/popup.css", "engine/offscreen.html"]) {
+const { version } = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const manifest = JSON.parse(fs.readFileSync(path.join(src, "manifest.json"), "utf8"));
+fs.writeFileSync(path.join(dist, "manifest.json"), `${JSON.stringify({ ...manifest, version }, null, 2)}\n`);
+
+for (const file of ["popup/popup.html", "popup/popup.css", "engine/offscreen.html"]) {
   fs.copyFileSync(path.join(src, file), path.join(dist, path.basename(file)));
 }
 for (const size of [16, 32, 48, 128]) {

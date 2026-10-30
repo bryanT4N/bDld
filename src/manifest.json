@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "bDld",
-  "description": "把正在看的 B 站视频保存为一个 MP4 文件",
-  "version": "0.1.0",
+  "name": "bDld - B站视频离线缓存工具",
+  "short_name": "bDld",
+  "description": "把正在观看的 B 站视频保存为一个 MP4 文件。",
   "minimum_chrome_version": "116",
   "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
   "action": {
