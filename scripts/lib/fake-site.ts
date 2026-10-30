@@ -4,7 +4,7 @@ import { signWbi } from "../../src/probe/wbi";
 import type { VideoCodec } from "../../src/shared/types";
 import { launchExtension, type Harness } from "./browser";
 import { run } from "./env";
-import { iconPng } from "./icon.mjs";
+import { coverPng } from "./icon.mjs";
 import { startMediaServer } from "./media-server";
 import { locateHead } from "./merge";
 
@@ -23,11 +23,16 @@ export interface FakeVideo {
   fmt: number;
   height: number;
   file: string;
+  /** bit/s reported in the offer; derived from the file size when omitted. */
+  bandwidth?: number;
 }
 
 export interface FakeSiteOptions {
   dir: string;
   title: string;
+  owner?: string;
+  /** Sets the DedeUserID cookie on the main video page. */
+  loggedIn?: boolean;
   durationSec: number;
   videos: FakeVideo[];
   audio: { id: number; file: string };
@@ -77,7 +82,7 @@ export async function startFakeSite(o: FakeSiteOptions) {
     files[name] = v.file;
     const head = locateHead(v.file);
     return {
-      id: v.qn, baseUrl: url(o.mode, name), backupUrl: [url("media", name)], bandwidth: bandwidth(v.file),
+      id: v.qn, baseUrl: url(o.mode, name), backupUrl: [url("media", name)], bandwidth: v.bandwidth ?? bandwidth(v.file),
       codecs: CODEC_STRINGS[v.codec], width: Math.round((v.height * 16) / 9), height: v.height, frameRate: "25",
       codecid: CODEC_IDS[v.codec], segment_base: { initialization: range(head.initRange), index_range: range(head.indexRange) },
     };
@@ -101,7 +106,7 @@ export async function startFakeSite(o: FakeSiteOptions) {
   };
   const videoData = {
     bvid: BVID, aid: 1, cid: CID, title: o.title, duration: o.durationSec,
-    pic: "https://i0.hdslb.com/bfs/archive/cover.png", owner: { name: "测试 UP 主" },
+    pic: "https://i0.hdslb.com/bfs/archive/cover.png", owner: { name: o.owner ?? "测试 UP 主" },
     pages: [{ cid: CID, page: 1, part: "P1", duration: o.durationSec }],
   };
   const playing = o.player?.playingFmt !== undefined ? url(o.mode, `${CID}-1-${o.player.playingFmt}.m4s`) : undefined;
@@ -115,6 +120,7 @@ export async function startFakeSite(o: FakeSiteOptions) {
 window.__INITIAL_STATE__ = ${JSON.stringify({ videoData })};
 window.__playinfo__ = ${JSON.stringify(playinfo)};
 ${playerJs(CID, 1, "s")}
+${o.loggedIn ? 'document.cookie = "DedeUserID=42; domain=.bilibili.com; path=/; secure";' : ""}
 </script><h1>fake video page</h1>`;
 
   // Part 2 after in-site navigation: __playinfo__ still describes part 1, so the probe must call
@@ -136,7 +142,7 @@ document.cookie = "DedeUserID=42; domain=.bilibili.com; path=/; secure";
     handle(req, res, u) {
       const host = req.headers.host ?? "";
       if (host === "i0.hdslb.com") {
-        res.writeHead(200, { "Content-Type": "image/png" }).end(iconPng(224));
+        res.writeHead(200, { "Content-Type": "image/png" }).end(coverPng(320, 200));
         return true;
       }
       if (host === "api.bilibili.com") {
@@ -167,11 +173,14 @@ document.cookie = "DedeUserID=42; domain=.bilibili.com; path=/; secure";
     server,
     apiCalls,
     title: o.title,
-    launch: (): Promise<Harness> =>
-      launchExtension([
+    launch: (options: { deviceScaleFactor?: number } = {}): Promise<Harness> =>
+      launchExtension(
+        [
         `--host-resolver-rules=${hosts.map((x) => `MAP ${x} 127.0.0.1:${server.port}`).join(", ")}`,
         "--ignore-certificate-errors",
-      ]),
+        ],
+        options,
+      ),
   };
 }
 

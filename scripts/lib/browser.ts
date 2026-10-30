@@ -12,7 +12,7 @@ export interface Harness {
 }
 
 /** Loads dist/, or the unpacked extension in BDLD_EXTENSION_DIR (e.g. an extracted release zip). */
-export async function launchExtension(extraArgs: string[] = []): Promise<Harness> {
+export async function launchExtension(extraArgs: string[] = [], options: { deviceScaleFactor?: number } = {}): Promise<Harness> {
   const extension = process.env.BDLD_EXTENSION_DIR ?? dist;
   const profile = tempDir("bdld-profile-");
   const downloadsDir = tempDir("bdld-downloads-");
@@ -25,6 +25,7 @@ export async function launchExtension(extraArgs: string[] = []): Promise<Harness
     executablePath: chromiumPath(),
     headless: false,
     acceptDownloads: true,
+    ...(options.deviceScaleFactor ? { deviceScaleFactor: options.deviceScaleFactor, viewport: { width: 1280, height: 800 } } : {}),
     downloadsPath: downloadsDir,
     args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, ...extraArgs],
   });

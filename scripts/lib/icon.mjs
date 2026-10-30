@@ -35,35 +35,23 @@ function chunk(type, data) {
   return out;
 }
 
-/** A pink rounded square with a white download arrow, as PNG bytes. */
-export function iconPng(size) {
-  const ss = 4;
-  const raw = Buffer.alloc(size * (size * 4 + 1));
-  for (let py = 0; py < size; py++) {
-    raw[py * (size * 4 + 1)] = 0;
-    for (let px = 0; px < size; px++) {
-      let bg = 0;
-      let fg = 0;
-      for (let sy = 0; sy < ss; sy++) {
-        for (let sx = 0; sx < ss; sx++) {
-          const x = (px + (sx + 0.5) / ss) / size;
-          const y = (py + (sy + 0.5) / ss) / size;
-          if (!inRoundedSquare(x, y)) continue;
-          if (inArrow(x, y)) fg++;
-          else bg++;
-        }
-      }
-      const n = ss * ss;
-      const alpha = (bg + fg) / n;
-      const mix = bg + fg === 0 ? 0 : fg / (bg + fg);
-      const o = py * (size * 4 + 1) + 1 + px * 4;
-      for (let i = 0; i < 3; i++) raw[o + i] = Math.round(PINK[i] * (1 - mix) + WHITE[i] * mix);
-      raw[o + 3] = Math.round(alpha * 255);
+/** PNG bytes for a width x height RGBA image; `pixel(x, y)` returns [r, g, b, a] at pixel centres in [0, 1). */
+export function png(width, height, pixel) {
+  const raw = Buffer.alloc(height * (width * 4 + 1));
+  for (let py = 0; py < height; py++) {
+    raw[py * (width * 4 + 1)] = 0;
+    for (let px = 0; px < width; px++) {
+      const o = py * (width * 4 + 1) + 1 + px * 4;
+      const [r, g, b, a] = pixel(px, py);
+      raw[o] = r;
+      raw[o + 1] = g;
+      raw[o + 2] = b;
+      raw[o + 3] = a;
     }
   }
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0);
-  ihdr.writeUInt32BE(size, 4);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;
   ihdr[9] = 6;
   return Buffer.concat([
@@ -72,4 +60,33 @@ export function iconPng(size) {
     chunk("IDAT", zlib.deflateSync(raw)),
     chunk("IEND", Buffer.alloc(0)),
   ]);
+}
+
+/** A pink rounded square with a white download arrow, as PNG bytes. */
+export function iconPng(size) {
+  const ss = 4;
+  return png(size, size, (px, py) => {
+    let bg = 0;
+    let fg = 0;
+    for (let sy = 0; sy < ss; sy++) {
+      for (let sx = 0; sx < ss; sx++) {
+        const x = (px + (sx + 0.5) / ss) / size;
+        const y = (py + (sy + 0.5) / ss) / size;
+        if (!inRoundedSquare(x, y)) continue;
+        if (inArrow(x, y)) fg++;
+        else bg++;
+      }
+    }
+    const mix = bg + fg === 0 ? 0 : fg / (bg + fg);
+    const rgb = PINK.map((c, i) => Math.round(c * (1 - mix) + WHITE[i] * mix));
+    return [...rgb, Math.round(((bg + fg) / (ss * ss)) * 255)];
+  });
+}
+
+/** A neutral blue-grey gradient used as a stand-in video cover. */
+export function coverPng(width, height) {
+  return png(width, height, (x, y) => {
+    const t = (x / width) * 0.6 + (y / height) * 0.4;
+    return [Math.round(96 + 60 * t), Math.round(118 + 56 * t), Math.round(140 + 50 * t), 255];
+  });
 }

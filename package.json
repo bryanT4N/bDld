@@ -19,7 +19,8 @@
     "check:speed": "npm run build && node scripts/run-ts.mjs scripts/speed-check.ts",
     "check:engine": "npm run build && node scripts/run-ts.mjs scripts/engine-check.ts",
     "e2e": "npm run build && node scripts/run-ts.mjs scripts/e2e.ts",
-    "package": "node scripts/build.mjs && node scripts/package.mjs"
+    "package": "node scripts/build.mjs && node scripts/package.mjs",
+    "screenshots": "npm run build && node scripts/run-ts.mjs scripts/screenshots.ts"
   },
   "devDependencies": {
     "@types/chrome": "^0.3.7",
