@@ -145,7 +145,9 @@ function playing(player: unknown, videos: VideoStream[]): Playing {
   const exact = fmt === undefined ? undefined : videos.find((v) => v.urls.some((u) => formatId(u) === fmt));
   if (exact) return { via: "player-stream", qn: exact.qn, codec: exact.codec };
   const q = typeof p.quality === "object" && p.quality !== null ? (p.quality as Obj) : {};
-  const qn = [q.realQ, q.nowQ].find((v): v is number => typeof v === "number" && v > 0 && videos.some((s) => s.qn === v));
+  const qn = [q.realQ, q.nowQ]
+    .map((v) => (typeof v === "string" && /^\d+$/.test(v) ? Number(v) : v))
+    .find((v): v is number => typeof v === "number" && v > 0 && videos.some((s) => s.qn === v));
   return qn === undefined ? { via: "unknown" } : { via: "player-quality", qn };
 }
 

@@ -43,6 +43,28 @@ try {
   const source = await popup.locator("main").getAttribute("data-source");
   const callParams = playurlCalls.map((u) => [...new URL(u).searchParams.keys()].sort().join(","));
   ok(`popup default: ${defaultOption} (chosen via ${playing}); play URLs from ${source}; page playurl requests meanwhile: ${callParams.length ? callParams.join(" | ") : "none"}`);
+  const pageState = await tab.evaluate(() => {
+    const w = window as unknown as {
+      player?: Record<string, ((...a: unknown[]) => unknown) | undefined>;
+      __playinfo__?: { data?: { dash?: { video?: { baseUrl?: string; id?: number }[] } } };
+    };
+    const call = (name: string) => {
+      try {
+        return typeof w.player?.[name] === "function" ? w.player[name]!() : `(no ${name})`;
+      } catch (e) {
+        return `(threw ${String(e)})`;
+      }
+    };
+    const media = call("getMediaInfo") as { playUrl?: unknown } | string;
+    const first = w.__playinfo__?.data?.dash?.video?.[0];
+    return {
+      quality: call("getQuality"),
+      playUrlPath: typeof media === "object" && typeof media?.playUrl === "string" ? new URL(media.playUrl).pathname : media,
+      manifest: call("getManifest"),
+      playinfoFirstVideo: first ? { id: first.id, path: first.baseUrl ? new URL(first.baseUrl).pathname : undefined } : "(no __playinfo__ dash)",
+    };
+  });
+  console.log(`     page player state: ${JSON.stringify(pageState)}`);
 
   const started = Date.now();
   await popup.getByRole("button", { name: "下载", exact: true }).click();

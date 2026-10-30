@@ -51,6 +51,7 @@ describe("normalizeProbe", () => {
     expect(withPlayer({ quality: { nowQ: 16, realQ: 16 }, playUrl: hevcUrl })).toEqual({ via: "player-stream", qn: 32, codec: "hevc" });
     expect(withPlayer({ quality: { nowQ: 32, realQ: 16 }, playUrl: "https://x.bilivideo.com/2-1-99999.m4s" })).toEqual({ via: "player-quality", qn: 16 });
     expect(withPlayer({ quality: { nowQ: 32, realQ: 0 } })).toEqual({ via: "player-quality", qn: 32 });
+    expect(withPlayer({ quality: { nowQ: "16", realQ: "16" } })).toEqual({ via: "player-quality", qn: 16 });
     expect(withPlayer({ quality: { nowQ: 120, realQ: 120 } })).toEqual({ via: "unknown" });
     expect(withPlayer({ quality: "x", playUrl: 42 })).toEqual({ via: "unknown" });
     expect(withPlayer(undefined)).toEqual({ via: "unknown" });
