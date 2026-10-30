@@ -1,24 +1,39 @@
 import fs from "node:fs";
 import http from "node:http";
+import https from "node:https";
 import type { AddressInfo } from "node:net";
+
+export interface ServerOptions {
+  tls?: { key: string; cert: string };
+  /** Handles a request before the media routes; returns true when it responded. */
+  handle?(req: http.IncomingMessage, res: http.ServerResponse, url: URL): boolean;
+}
+
+export interface RecordedRequest {
+  host: string;
+  path: string;
+  range: string;
+  headers: http.IncomingHttpHeaders;
+}
 
 /**
  * Local stand-in for the media CDN, serving files by name with Range support.
- * Path prefixes select behaviour:
+ * The first path segment selects behaviour:
  *   /media/  normal 206 responses
  *   /flaky/  drops the connection of its first request, then behaves like /media/
  *   /slow/   206 responses trickled out slowly
  *   /html/   a 567 text/html block page, like EdgeOne's
  *   /forbidden/  403
  */
-export async function startMediaServer(files: Record<string, string>) {
-  const requests: { path: string; range: string }[] = [];
+export async function startMediaServer(files: Record<string, string>, options: ServerOptions = {}) {
+  const requests: RecordedRequest[] = [];
   let flakyDropped = false;
-  const server = http.createServer((req, res) => {
+  const handler: http.RequestListener = (req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
-    const [, mode, name] = url.pathname.split("/");
     const range = req.headers.range ?? "";
-    requests.push({ path: url.pathname, range });
+    requests.push({ host: req.headers.host ?? "", path: url.pathname, range, headers: req.headers });
+    if (options.handle?.(req, res, url)) return;
+    const [, mode, name] = url.pathname.split("/");
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length");
     const file = name ? files[name] : undefined;
@@ -40,7 +55,7 @@ export async function startMediaServer(files: Record<string, string>) {
       "Content-Range": `bytes ${first}-${last}/${size}`,
     });
     const stream = fs.createReadStream(file, { start: first, end: last, highWaterMark: 64 * 1024 });
-    if (mode !== "slow") return stream.pipe(res);
+    if (mode !== "slow") return void stream.pipe(res);
     stream.on("data", (chunk) => {
       stream.pause();
       res.write(chunk);
@@ -48,12 +63,18 @@ export async function startMediaServer(files: Record<string, string>) {
     });
     stream.on("end", () => res.end());
     res.on("close", () => stream.destroy());
-  });
+  };
+  const server = options.tls ? https.createServer(options.tls, handler) : http.createServer(handler);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   return {
-    origin: `http://127.0.0.1:${port}`,
+    port,
+    origin: `${options.tls ? "https" : "http"}://127.0.0.1:${port}`,
     requests,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
   };
 }

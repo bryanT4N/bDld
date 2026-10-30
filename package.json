@@ -11,6 +11,7 @@
     "test": "vitest run",
     "smoke": "npm run build && node scripts/run-ts.mjs scripts/smoke.ts",
     "verify:remux": "node scripts/run-ts.mjs scripts/verify-remux.ts",
+    "check:popup": "npm run build && node scripts/run-ts.mjs scripts/popup-check.ts",
     "check:engine": "npm run build && node scripts/run-ts.mjs scripts/engine-check.ts",
     "e2e": "npm run build && node scripts/run-ts.mjs scripts/e2e.ts"
   },
