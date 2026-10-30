@@ -61,6 +61,8 @@ try {
   assert.deepEqual(await popup.getByRole("button", { name: /^(AVC|HEVC|AV1)$/ }).allInnerTexts(), ["AVC"]);
   await popup.locator("select").selectOption("32");
   await popup.getByRole("button", { name: "HEVC", exact: true }).click();
+  assert.match(await checked(), /^480P 清晰 · HEVC · 约/);
+  await popup.locator("select").selectOption("16");
   ok("codec choice offers only the codecs at the selected quality and keeps the codec across quality changes when offered");
 
   await popup.getByRole("button", { name: "下载", exact: true }).click();
@@ -72,12 +74,27 @@ try {
 
   await popup.reload();
   await popup.getByText(/下载中|正在生成|正在保存|已保存/).first().waitFor();
+  assert.match(await checked(), /^360P 流畅 · AVC · 约/, "reopened popup must show the task's choice, not the 480P HEVC default");
+  assert.ok(await popup.locator("select").isDisabled());
+  await popup.screenshot({ path: path.join(out, "3b-reopened-during-download.png") });
+  ok("reopened popup keeps the running task's 360P AVC (not the player default 480P HEVC) and locks the choice");
+  const elsewhere = await h.ctx.newPage();
+  await elsewhere.setViewportSize({ width: 340, height: 420 });
+  await elsewhere.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${tabIds.home}`);
+  await elsewhere.getByText(/下载中|正在生成|正在保存|已保存/).first().waitFor();
+  assert.ok((await elsewhere.locator("main").innerText()).includes("【测试】"));
+  await elsewhere.close();
+  ok("popup opened on a non-video tab shows the running download from the engine");
   ok("reopened popup shows the running task from the engine");
 
   await popup.getByText("已保存").waitFor({ timeout: 120_000 });
   await popup.screenshot({ path: path.join(out, "4-done.png") });
   const fileName = await popup.locator(".detail").innerText();
-  assert.equal(fileName, `${videoData.title} [${BVID}] 480P 清晰.mp4`);
+  assert.equal(fileName, `${videoData.title} [${BVID}] 360P 流畅.mp4`);
+  await popup.reload();
+  await popup.getByText("已保存").waitFor();
+  assert.match(await checked(), /^360P 流畅 · AVC · 约/, "a finished task's choice is kept after reopening");
+  assert.ok(!(await popup.locator("select").isDisabled()));
   assert.ok(fs.existsSync(path.join(h.downloadsDir, fileName)), "file in the downloads folder");
   assert.ok(await popup.getByRole("button", { name: "在文件夹中显示" }).isVisible());
   ok(`done state shows "${fileName}" and 在文件夹中显示; file exists in the downloads folder`);

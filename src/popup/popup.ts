@@ -2,7 +2,17 @@ import { formatBytes, formatDuration } from "../shared/format";
 import { isTasksChanged, send } from "../shared/messages";
 import { qualityLabel } from "../shared/quality";
 import { CODEC_NAMES, approxBytes, atQuality, bestAudio, codecsAt, defaultSelection, qualities, streamFor } from "../shared/select";
-import { isTerminal, type DownloadTask, type FailureReason, type ProbeResult, type Selection, type VideoInfo } from "../shared/types";
+import {
+  isTerminal,
+  type DownloadTask,
+  type FailureReason,
+  type Playing,
+  type PlayOffer,
+  type ProbeResult,
+  type Selection,
+  type VideoCodec,
+  type VideoInfo,
+} from "../shared/types";
 
 /** playurl addresses expire after about two hours; re-probe well before that. */
 const OFFER_MAX_AGE_MS = 90 * 60 * 1000;
@@ -39,8 +49,19 @@ let tabId: number | undefined;
 let probe: ProbeResult | undefined;
 let tasks: DownloadTask[] = [];
 let selection: Selection | undefined;
+let selectionFor: string | undefined;
+let rendered: { key: string; taskId: string | undefined } | undefined;
 let taskSlot: HTMLElement | undefined;
 let downloadButton: HTMLButtonElement | undefined;
+
+/** The video the popup shows, with whatever is known about it so far. */
+interface Subject {
+  video: VideoInfo;
+  offer?: PlayOffer;
+  playing?: Playing;
+  /** This video's latest task: active, queued or finished. */
+  task?: DownloadTask;
+}
 
 async function currentTabId(): Promise<number | undefined> {
   const fromQuery = new URLSearchParams(location.search).get("tab");
@@ -49,66 +70,90 @@ async function currentTabId(): Promise<number | undefined> {
   return tab?.id;
 }
 
+const videoKey = (v: VideoInfo) => `${v.bvid}:${v.cid}`;
+
 function taskFor(video: VideoInfo): DownloadTask | undefined {
-  return tasks
-    .filter((t) => t.video.bvid === video.bvid && t.video.cid === video.cid)
-    .sort((a, b) => b.createdAt - a.createdAt)[0];
+  return tasks.filter((t) => videoKey(t.video) === videoKey(video)).sort((a, b) => b.createdAt - a.createdAt)[0];
+}
+
+/** The tab's video once probed; until then, or off a video page, the running task's video. */
+function subject(): Subject | undefined {
+  if (probe?.kind === "ok") return { video: probe.video, offer: probe.offer, playing: probe.playing, task: taskFor(probe.video) };
+  const active = tasks.filter((t) => !isTerminal(t.state)).sort((a, b) => b.createdAt - a.createdAt)[0];
+  return active && { video: active.video, task: active };
+}
+
+const chosenOf = (task: DownloadTask): Selection => ({ qn: task.chosen.video.qn, codec: task.chosen.video.codec });
+
+/** A task's choice wins over any default, so reopening the popup never changes what is shown. */
+function selectionOf(s: Subject): Selection | undefined {
+  const key = videoKey(s.video);
+  if (selectionFor !== key) {
+    selectionFor = key;
+    selection = undefined;
+  }
+  if (s.offer && selection && !streamFor(s.offer, selection)) selection = undefined;
+  selection ??= s.task ? chosenOf(s.task) : s.offer && s.playing ? defaultSelection(s.offer, s.playing) : undefined;
+  return selection;
+}
+
+function message(...lines: Child[]): void {
+  app.replaceChildren(...lines.filter((l): l is Node | string => Boolean(l)));
 }
 
 function render(): void {
   taskSlot = undefined;
   downloadButton = undefined;
-  if (!probe) {
-    app.replaceChildren(h("p", { class: "muted center" }, "正在读取视频信息…"));
-    return;
-  }
-  if (probe.kind === "not-video-page") {
-    app.replaceChildren(
+  const s = subject();
+  rendered = s && { key: videoKey(s.video), taskId: s.task?.id };
+  if (!s) {
+    if (!probe) return message(h("p", { class: "muted center" }, "正在读取视频信息…"));
+    if (probe.kind === "error") return message(h("p", { class: "error" }, probe.message), h("button", { class: "secondary", onClick: () => void load() }, "重试"));
+    return message(
       h("p", { class: "center" }, "请在 B 站视频页面使用"),
       h("p", { class: "muted center" }, "打开 www.bilibili.com/video/ 开头的页面，再点击扩展图标。"),
     );
-    return;
-  }
-  if (probe.kind === "error") {
-    app.replaceChildren(
-      h("p", { class: "error" }, probe.message),
-      h("button", { class: "secondary", onClick: () => void load() }, "重试"),
-    );
-    return;
   }
 
-  const { video } = probe;
-  app.dataset.source = probe.offer.source;
-  app.dataset.playing = probe.playing.via;
-  const { offer } = probe;
-  const sel = (selection ??= defaultSelection(offer, probe.playing));
-  const audio = bestAudio(offer.audios);
+  const { video, offer, task } = s;
+  if (probe?.kind === "ok") {
+    app.dataset.source = probe.offer.source;
+    app.dataset.playing = probe.playing.via;
+  }
+  const sel = selectionOf(s);
+  const locked = !offer || (task !== undefined && !isTerminal(task.state));
+  const audio = offer ? bestAudio(offer.audios) : task!.chosen.audio;
+  const streams = offer
+    ? qualities(offer).map((qn) => streamFor(offer, atQuality(offer, qn, sel?.codec))!)
+    : [task!.chosen.video];
   const select = h(
     "select",
     {
       "aria-label": "清晰度",
+      disabled: locked,
       onChange: (e) => {
-        selection = atQuality(offer, Number((e.target as HTMLSelectElement).value), sel.codec);
+        selection = atQuality(offer!, Number((e.target as HTMLSelectElement).value), sel?.codec);
         render();
       },
     },
-    ...qualities(offer).map((qn) => {
-      const v = streamFor(offer, atQuality(offer, qn, sel.codec))!;
-      return h(
+    ...streams.map((v) =>
+      h(
         "option",
-        { value: String(qn), selected: qn === sel.qn },
-        `${qualityLabel(qn, v.height)} · ${CODEC_NAMES[v.codec]} · 约 ${formatBytes(approxBytes(v, audio, video.durationSec))}`,
-      );
-    }),
+        { value: String(v.qn), selected: v.qn === sel?.qn },
+        `${qualityLabel(v.qn, v.height)} · ${CODEC_NAMES[v.codec]} · 约 ${formatBytes(approxBytes(v, audio, video.durationSec))}`,
+      ),
+    ),
   );
-  const codecButton = (codec: Selection["codec"]) =>
+  const codecs = offer && sel ? codecsAt(offer, sel.qn) : sel ? [sel.codec] : [];
+  const codecButton = (codec: VideoCodec) =>
     h(
       "button",
       {
         type: "button",
-        "aria-pressed": String(sel.codec === codec),
+        disabled: locked,
+        "aria-pressed": String(sel?.codec === codec),
         onClick: () => {
-          selection = { qn: sel.qn, codec };
+          if (sel) selection = { qn: sel.qn, codec };
           render();
         },
       },
@@ -134,7 +179,7 @@ function render(): void {
       ),
     ),
     h("label", { class: "field" }, h("span", {}, "清晰度"), select),
-    h("div", { class: "field" }, h("span", {}, "编码"), h("div", { class: "segmented", role: "group", "aria-label": "编码" }, ...codecsAt(offer, sel.qn).map(codecButton))),
+    h("div", { class: "field" }, h("span", {}, "编码"), h("div", { class: "segmented", role: "group", "aria-label": "编码" }, ...codecs.map(codecButton))),
     ...(video.loggedIn ? [] : [h("p", { class: "login" }, "登录后可下载更高清晰度")]),
     taskSlot,
     downloadButton,
@@ -143,10 +188,11 @@ function render(): void {
 }
 
 function renderTask(): void {
-  if (!taskSlot || !downloadButton || probe?.kind !== "ok") return;
-  const task = taskFor(probe.video);
+  const subj = subject();
+  if (!taskSlot || !downloadButton || !subj) return;
+  const task = subj.task;
   const busy = task !== undefined && !isTerminal(task.state);
-  downloadButton.disabled = busy;
+  downloadButton.disabled = busy || !subj.offer;
   downloadButton.textContent = task?.state.phase === "done" ? "再次下载" : "下载";
   const others = tasks.filter((t) => t !== task && !isTerminal(t.state)).length;
   const cancel = task && h("button", { class: "secondary", onClick: () => void send({ to: "sw", type: "cancel", taskId: task.id }) }, "取消");
@@ -210,29 +256,34 @@ async function download(): Promise<void> {
   if (!video) return;
   downloadButton?.setAttribute("disabled", "");
   const task = await send({ to: "sw", type: "start", video: probe.video, chosen: { video, audio: bestAudio(probe.offer.audios) } });
-  if (!tasks.some((t) => t.id === task.id)) tasks = [...tasks, task];
-  renderTask();
+  if (!tasks.some((t) => t.id === task.id)) onTasks([...tasks, task]);
 }
 
 async function load(): Promise<void> {
   probe = undefined;
-  selection = undefined;
   render();
   tabId = await currentTabId();
   probe = tabId === undefined ? { kind: "not-video-page" } : await send({ to: "sw", type: "probe", tabId });
   render();
 }
 
+/** Progress only refreshes the task area; a different video or task rebuilds the whole view. */
+function onTasks(next: DownloadTask[]): void {
+  tasks = next;
+  const s = subject();
+  if (s && rendered?.key === videoKey(s.video) && rendered.taskId === s.task?.id) renderTask();
+  else render();
+}
+
 chrome.runtime.onMessage.addListener((msg: unknown) => {
-  if (!isTasksChanged(msg)) return false;
-  tasks = msg.tasks;
-  renderTask();
+  if (isTasksChanged(msg)) onTasks(msg.tasks);
   return false;
 });
 
 async function main(): Promise<void> {
-  tasks = await send({ to: "sw", type: "tasks" });
-  await load();
+  const pending = load();
+  onTasks(await send({ to: "sw", type: "tasks" }));
+  await pending;
 }
 
 void main();
