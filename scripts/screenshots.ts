@@ -38,9 +38,15 @@ const h = await site.launch({ deviceScaleFactor: 2 });
 
 const shots: Record<string, Buffer> = {};
 async function capture(popup: Page, name: string): Promise<void> {
-  const readme = name === "downloading";
-  shots[name] = await popup.locator("main").screenshot(readme ? { path: path.join(images, `popup-${name}.png`) } : {});
-  if (readme) console.log(`docs/images/popup-${name}.png`);
+  shots[name] = await popup.locator("main").screenshot();
+  if (name !== "downloading") return;
+  // GitHub strips CSS from READMEs, so the rounded card has to be baked into the PNG.
+  const style = await popup.addStyleTag({
+    content: "html,body{background:transparent!important} main{background:var(--bg);border:1px solid var(--line);border-radius:12px}",
+  });
+  await popup.locator("main").screenshot({ path: path.join(images, `popup-${name}.png`), omitBackground: true });
+  await style.evaluate((el) => (el as Element).remove());
+  console.log(`docs/images/popup-${name}.png`);
 }
 
 const STORE_SHOTS: [string, string, string][] = [
