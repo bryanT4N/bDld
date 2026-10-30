@@ -63,7 +63,7 @@ async function attempt(url: string, range: ByteRange, ctx: FetchContext): Promis
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (got + value.length > expected) throw new TaskError("not-media", "服务器返回的数据比请求的多");
+      if (got + value.length > expected) throw new TaskError("not-media", "服务器返回的数据超出请求范围");
       out.set(value, got);
       got += value.length;
       ctx.onBytes(value.length);

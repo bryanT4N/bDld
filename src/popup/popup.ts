@@ -19,12 +19,12 @@ import {
 const OFFER_MAX_AGE_MS = 90 * 60 * 1000;
 
 const FAILURE_TEXT: Record<FailureReason, string> = {
-  network: "网络连接失败，请检查网络后重试",
-  "url-expired": "下载地址已过期，请刷新视频页面后重新下载",
-  "not-media": "服务器没有返回视频数据，请稍后再试",
-  "storage-full": "磁盘空间不足，请清理后重试",
+  network: "网络错误，请重试",
+  "url-expired": "下载地址已过期，请刷新页面后重试",
+  "not-media": "服务器未返回视频数据，请稍后重试",
+  "storage-full": "磁盘空间不足",
   remux: "视频数据无法处理",
-  internal: "下载出错",
+  internal: "下载失败",
 };
 
 type Child = Node | string | false | undefined;
@@ -152,12 +152,9 @@ function render(): void {
   const s = subject();
   rendered = s && viewKey(s);
   if (!s) {
-    if (!probe) return message(h("p", { class: "muted center" }, "正在读取视频信息…"));
+    if (!probe) return message(h("p", { class: "muted center" }, "读取中"));
     if (probe.kind === "error") return message(h("p", { class: "error" }, probe.message), h("button", { class: "secondary", onClick: () => void load() }, "重试"));
-    return message(
-      h("p", { class: "center" }, "请在 B 站视频页面使用"),
-      h("p", { class: "muted center" }, "打开 www.bilibili.com/video/ 开头的页面，再点击扩展图标。"),
-    );
+    return message(h("p", { class: "muted center" }, "仅支持 B 站视频页面"));
   }
 
   const { video, offer, task } = s;
@@ -272,10 +269,10 @@ function renderAction(): void {
       break;
     }
     case "finalizing":
-      parts = [bar(), row("正在生成文件")];
+      parts = [bar(), row("合并中")];
       break;
     case "saving":
-      parts = [bar(), row("正在保存")];
+      parts = [bar(), row("保存中")];
       break;
     default:
       if (s?.phase === "done" && sameChoice(task!, selection)) {

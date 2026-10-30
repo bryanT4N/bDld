@@ -69,7 +69,7 @@ describe("normalizeProbe", () => {
   it("reports a page whose data belongs to another video", () => {
     const raw = clone();
     raw.manifest.bvid = "BV1xx411c7mD";
-    expect(normalizeProbe(raw)).toEqual({ kind: "error", message: "页面信息与正在播放的视频不一致，请刷新页面后再试" });
+    expect(normalizeProbe(raw)).toEqual({ kind: "error", message: "页面信息与正在播放的视频不一致，请刷新页面后重试" });
   });
 
   it("rejects non-DASH and stream-less results", () => {
@@ -80,7 +80,7 @@ describe("normalizeProbe", () => {
 
     const noAudio = clone();
     noAudio.play.dash.audio = [];
-    expect(normalizeProbe(noAudio)).toEqual({ kind: "error", message: "没有找到可下载的音频流" });
+    expect(normalizeProbe(noAudio)).toEqual({ kind: "error", message: "未找到可下载的音频流" });
   });
 
   it("explains malformed page data instead of throwing", () => {
@@ -93,9 +93,9 @@ describe("normalizeProbe", () => {
 
   it("passes probe-side outcomes through", () => {
     expect(normalizeProbe({ kind: "not-video-page" })).toEqual({ kind: "not-video-page" });
-    expect(normalizeProbe({ kind: "error", message: "播放器还没有准备好，请稍后再试" })).toEqual({
+    expect(normalizeProbe({ kind: "error", message: "播放器尚未就绪，请稍后重试" })).toEqual({
       kind: "error",
-      message: "播放器还没有准备好，请稍后再试",
+      message: "播放器尚未就绪，请稍后重试",
     });
   });
 });

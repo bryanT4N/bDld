@@ -108,7 +108,7 @@ function videoInfo(videoData: unknown, manifest: unknown, loggedIn: boolean): Vi
   const vd = obj(videoData, "videoData");
   const m = obj(manifest, "manifest");
   const bvid = str(m, "bvid", "manifest");
-  if (str(vd, "bvid", "videoData") !== bvid) throw new StalePage("页面信息与正在播放的视频不一致，请刷新页面后再试");
+  if (str(vd, "bvid", "videoData") !== bvid) throw new StalePage("页面信息与正在播放的视频不一致，请刷新页面后重试");
   const cid = int(m, "cid", "manifest");
   const pages = Array.isArray(vd.pages) ? vd.pages.map((p, i) => obj(p, `videoData.pages[${i}]`)) : [];
   const page = pages.find((p) => Number(p.cid) === cid);
@@ -160,12 +160,12 @@ export function normalizeProbe(raw: unknown): ProbeResult {
     if (r.kind !== "raw") throw new Invalid("无法识别页面返回的数据");
     const video = videoInfo(r.videoData, r.manifest, r.loggedIn === true);
     const play = obj(r.play, "playurl");
-    if (!play.dash) return { kind: "error", message: "这个视频没有提供 DASH 格式，暂不支持" };
+    if (!play.dash) return { kind: "error", message: "该视频未提供 DASH 格式，暂不支持" };
     const dash = obj(play.dash, "dash");
     const videos = (Array.isArray(dash.video) ? dash.video : []).map(videoStream).filter((s) => s !== undefined);
     const audios = (Array.isArray(dash.audio) ? dash.audio : []).map(audioStream).filter((s) => s !== undefined);
-    if (videos.length === 0) return { kind: "error", message: "没有找到可下载的视频流" };
-    if (audios.length === 0) return { kind: "error", message: "没有找到可下载的音频流" };
+    if (videos.length === 0) return { kind: "error", message: "未找到可下载的视频流" };
+    if (audios.length === 0) return { kind: "error", message: "未找到可下载的音频流" };
     return {
       kind: "ok",
       video,

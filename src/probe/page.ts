@@ -49,9 +49,9 @@ export async function probePage(): Promise<RawProbe> {
   if (!/^\/video\/(BV[0-9A-Za-z]+|av\d+)/i.test(location.pathname)) return { kind: "not-video-page" };
   const w = window as unknown as PageWindow;
   const videoData = w.__INITIAL_STATE__?.videoData;
-  if (!videoData) return { kind: "error", message: "页面还没有加载完，请稍后再试" };
+  if (!videoData) return { kind: "error", message: "页面尚未加载完成，请稍后重试" };
   const manifest = w.player?.getManifest?.();
-  if (!manifest?.cid || !manifest.bvid) return { kind: "error", message: "播放器还没有准备好，请稍后再试" };
+  if (!manifest?.cid || !manifest.bvid) return { kind: "error", message: "播放器尚未就绪，请稍后重试" };
   const loggedIn = /(?:^|;\s*)DedeUserID=\d+/.test(document.cookie);
   const player = {
     quality: attempt(() => w.player?.getQuality?.()),
@@ -64,7 +64,7 @@ export async function probePage(): Promise<RawProbe> {
   }
 
   const keys = wbiKeysFrom(localStorage.getItem("wbi_img_urls") ?? "");
-  if (!keys) return { kind: "error", message: "缺少接口签名信息，请刷新页面后再试" };
+  if (!keys) return { kind: "error", message: "缺少接口签名信息，请刷新页面后重试" };
   const params: Record<string, string | number> = {
     bvid: manifest.bvid,
     cid: manifest.cid,

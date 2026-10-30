@@ -42,7 +42,7 @@ try {
   await popup.setViewportSize({ width: 340, height: 420 });
 
   await popup.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${tabIds.home}`);
-  await popup.getByText("请在 B 站视频页面使用").waitFor();
+  await popup.getByText("仅支持 B 站视频页面").waitFor();
   await popup.screenshot({ path: path.join(out, "1-not-video-page.png") });
   ok("non-video tab shows the not-a-video-page state");
 
@@ -85,7 +85,7 @@ try {
   ok("progress bar with percent, size, speed and time left while running");
 
   await popup.reload();
-  await popup.getByText(/^\d+% · |正在生成|正在保存|已保存/).first().waitFor();
+  await popup.getByText(/^\d+% · |合并中|保存中|已保存/).first().waitFor();
   assert.match(await checked(), /^360P 流畅 · AVC · 约/, "reopened popup must show the task's choice, not the 480P HEVC default");
   assert.equal(await popup.locator("details.choice").count(), 0, "no disclosure while the task runs");
   await popup.screenshot({ path: path.join(out, "3b-reopened-during-download.png") });
@@ -93,7 +93,7 @@ try {
   const elsewhere = await h.ctx.newPage();
   await elsewhere.setViewportSize({ width: 340, height: 420 });
   await elsewhere.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${tabIds.home}`);
-  await elsewhere.getByText(/^\d+% · |正在生成|正在保存|已保存/).first().waitFor();
+  await elsewhere.getByText(/^\d+% · |合并中|保存中|已保存/).first().waitFor();
   assert.ok((await elsewhere.locator("main").innerText()).includes("【测试】"));
   await elsewhere.close();
   ok("popup opened on a non-video tab shows the running download from the engine");
