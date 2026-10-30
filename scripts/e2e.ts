@@ -36,16 +36,18 @@ try {
   });
 
   await popup.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${tabId}`);
-  await popup.locator("select").waitFor();
-  const defaultOption = await popup.locator("select option:checked").innerText();
+  await popup.locator(".choice").waitFor();
+  const defaultOption = await popup.locator(".choice summary, p.choice").first().innerText();
+  const playing = await popup.locator("main").getAttribute("data-playing");
   await popup.screenshot({ path: path.join(out, "1-ready.png") });
   const source = await popup.locator("main").getAttribute("data-source");
   const callParams = playurlCalls.map((u) => [...new URL(u).searchParams.keys()].sort().join(","));
-  ok(`popup default quality: ${defaultOption}; play URLs from ${source}; page playurl requests meanwhile: ${callParams.length ? callParams.join(" | ") : "none"}`);
+  ok(`popup default: ${defaultOption} (chosen via ${playing}); play URLs from ${source}; page playurl requests meanwhile: ${callParams.length ? callParams.join(" | ") : "none"}`);
 
   const started = Date.now();
   await popup.getByRole("button", { name: "下载", exact: true }).click();
-  await popup.getByText(/^(已保存|已取消)$|失败|错误|不是视频|过期|不足|无法/).first().waitFor({ timeout: 10 * 60_000 });
+  await popup.locator(".action .bar, .action .status").first().waitFor({ timeout: 60_000 });
+  await popup.locator(".action .done, .action .error, .action button.primary").first().waitFor({ timeout: 10 * 60_000 });
   await popup.screenshot({ path: path.join(out, "2-finished.png") });
 
   const tasks = (await popup.evaluate(() => chrome.runtime.sendMessage({ to: "sw", type: "tasks" }))) as DownloadTask[];

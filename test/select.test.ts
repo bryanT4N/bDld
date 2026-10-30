@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatDuration } from "../src/shared/format";
+import { formatBytes, formatClock, formatProgress } from "../src/shared/format";
 import { approxBytes, atQuality, bestAudio, codecsAt, defaultSelection, qualities } from "../src/shared/select";
 import type { AudioStream, PlayOffer, VideoCodec, VideoStream } from "../src/shared/types";
 
@@ -50,14 +50,16 @@ describe("selection", () => {
 });
 
 describe("format", () => {
-  it("formats sizes and durations in Chinese units", () => {
+  it("formats sizes, progress and time left", () => {
     expect(formatBytes(512)).toBe("1 KB");
     expect(formatBytes(3.25 * 1024 ** 2)).toBe("3.3 MB");
     expect(formatBytes(250 * 1024 ** 2)).toBe("250 MB");
     expect(formatBytes(1.5 * 1024 ** 3)).toBe("1.50 GB");
-    expect(formatDuration(0.2)).toBe("1 秒");
-    expect(formatDuration(80)).toBe("1 分 20 秒");
-    expect(formatDuration(120)).toBe("2 分");
-    expect(formatDuration(3 * 3600 + 5 * 60)).toBe("3 小时 5 分");
+    expect(formatProgress(226 * 1024 ** 2, 485 * 1024 ** 2)).toBe("226/485 MB");
+    expect(formatProgress(3.1 * 1024 ** 2, 8.5 * 1024 ** 2)).toBe("3.1/8.5 MB");
+    expect(formatProgress(0.45 * 1024 ** 3, 1.2 * 1024 ** 3)).toBe("0.45/1.20 GB");
+    expect(formatClock(118)).toBe("1:58");
+    expect(formatClock(0.2)).toBe("0:01");
+    expect(formatClock(3723)).toBe("1:02:03");
   });
 });

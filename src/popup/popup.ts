@@ -1,4 +1,4 @@
-import { formatBytes, formatDuration } from "../shared/format";
+import { formatBytes, formatClock, formatProgress } from "../shared/format";
 import { isTasksChanged, send } from "../shared/messages";
 import { qualityLabel } from "../shared/quality";
 import { CODEC_NAMES, approxBytes, atQuality, bestAudio, codecsAt, defaultSelection, qualities, streamFor } from "../shared/select";
@@ -52,9 +52,9 @@ let tasks: DownloadTask[] = [];
 let selection: Selection | undefined;
 let selectionFor: string | undefined;
 let expanded = false;
-let rendered: { key: string; taskId: string | undefined } | undefined;
-let taskSlot: HTMLElement | undefined;
-let downloadButton: HTMLButtonElement | undefined;
+/** What the full view was built for; when it changes, the view is rebuilt rather than patched. */
+let rendered: string | undefined;
+let actionSlot: HTMLElement | undefined;
 
 /** The video the popup shows, with whatever is known about it so far. */
 interface Subject {
@@ -85,6 +85,8 @@ function subject(): Subject | undefined {
   return active && { video: active.video, task: active };
 }
 
+const viewKey = (s: Subject) => `${videoKey(s.video)}|${s.task?.id}|${s.task ? isTerminal(s.task.state) : ""}|${Boolean(s.offer)}`;
+
 const chosenOf = (task: DownloadTask): Selection => ({ qn: task.chosen.video.qn, codec: task.chosen.video.codec });
 
 /** A task's choice wins over any default, so reopening the popup never changes what is shown. */
@@ -104,10 +106,9 @@ function message(...lines: Child[]): void {
 }
 
 function render(): void {
-  taskSlot = undefined;
-  downloadButton = undefined;
+  actionSlot = undefined;
   const s = subject();
-  rendered = s && { key: videoKey(s.video), taskId: s.task?.id };
+  rendered = s && viewKey(s);
   if (!s) {
     if (!probe) return message(h("p", { class: "muted center" }, "正在读取视频信息…"));
     if (probe.kind === "error") return message(h("p", { class: "error" }, probe.message), h("button", { class: "secondary", onClick: () => void load() }, "重试"));
@@ -167,8 +168,7 @@ function render(): void {
     );
   }
 
-  taskSlot = h("section", { class: "task" });
-  downloadButton = h("button", { class: "primary", onClick: () => void download() }, "下载");
+  actionSlot = h("section", { class: "action" });
   const cover = h("img", { class: "cover", alt: "", referrerpolicy: "no-referrer" });
   if (video.coverUrl) cover.src = video.coverUrl;
 
@@ -187,68 +187,63 @@ function render(): void {
     ),
     choice,
     ...(video.loggedIn ? [] : [h("p", { class: "login" }, "登录后可下载更高清晰度")]),
-    taskSlot,
-    downloadButton,
+    actionSlot,
   );
-  renderTask();
+  renderAction();
 }
 
-function renderTask(): void {
+const sameChoice = (task: DownloadTask, sel: Selection | undefined) =>
+  sel !== undefined && task.chosen.video.qn === sel.qn && task.chosen.video.codec === sel.codec;
+
+/**
+ * One action area: 下载 before a download, progress with 取消 while one runs, 在文件夹中显示 once
+ * this choice is saved. A different choice after a finished task offers 下载 again.
+ */
+function renderAction(): void {
   const subj = subject();
-  if (!taskSlot || !downloadButton || !subj) return;
+  if (!actionSlot || !subj) return;
   const task = subj.task;
-  const busy = task !== undefined && !isTerminal(task.state);
-  downloadButton.disabled = busy || !subj.offer;
-  downloadButton.textContent = task?.state.phase === "done" ? "再次下载" : "下载";
-  const others = tasks.filter((t) => t !== task && !isTerminal(t.state)).length;
-  const cancel = task && h("button", { class: "secondary", onClick: () => void send({ to: "sw", type: "cancel", taskId: task.id }) }, "取消");
   const bar = (fraction?: number) =>
     h("div", { class: fraction === undefined ? "bar indeterminate" : "bar" }, h("div", fraction === undefined ? {} : { style: `width:${(fraction * 100).toFixed(1)}%` }));
-  const line = (text: string, cls = "", action?: Child) => h("div", { class: "status" }, h("p", { class: cls }, text), action);
+  const row = (text: string, control?: Child, cls = "") => h("div", { class: "status" }, h("p", { class: cls }, text), control);
+  const textButton = (label: string, onClick: () => void) => h("button", { class: "link", onClick }, label);
+  const cancel = () => task && textButton("取消", () => void send({ to: "sw", type: "cancel", taskId: task.id }));
 
-  const parts: Child[] = [];
   const s = task?.state;
+  let parts: Child[];
   switch (s?.phase) {
-    case undefined:
-      if (others) parts.push(h("p", { class: "detail" }, "其他视频正在下载，新任务会排在后面"));
-      break;
     case "queued":
-      parts.push(line("排队中，等待前面的任务完成", "", cancel));
+      parts = [row("排队中", cancel())];
       break;
     case "preparing":
-      parts.push(line("正在准备…", "", cancel), bar());
+      parts = [bar(), row("准备中", cancel())];
       break;
     case "downloading": {
       const fraction = s.totalBytes ? s.doneBytes / s.totalBytes : 0;
-      const remaining = s.bytesPerSec > 0 ? ` · 剩余 ${formatDuration((s.totalBytes - s.doneBytes) / s.bytesPerSec)}` : "";
-      parts.push(
-        line(`下载中 ${Math.floor(fraction * 100)}%`, "", cancel),
-        bar(fraction),
-        h("p", { class: "detail" }, `${formatBytes(s.doneBytes)} / ${formatBytes(s.totalBytes)} · ${formatBytes(s.bytesPerSec)}/s${remaining}`),
-      );
+      const items = [`${Math.floor(fraction * 100)}%`, formatProgress(s.doneBytes, s.totalBytes)];
+      if (s.bytesPerSec > 0) {
+        items.push(`${formatBytes(s.bytesPerSec)}/s`, `剩余 ${formatClock((s.totalBytes - s.doneBytes) / s.bytesPerSec)}`);
+      }
+      parts = [bar(fraction), row(items.join(" · "), cancel())];
       break;
     }
     case "finalizing":
-      parts.push(line("正在生成 MP4…"), bar());
+      parts = [bar(), row("正在生成文件")];
       break;
     case "saving":
-      parts.push(line("正在保存到下载文件夹…"), bar());
+      parts = [bar(), row("正在保存")];
       break;
-    case "done":
-      parts.push(
-        line("已保存", "done", h("button", { class: "secondary", onClick: () => chrome.runtime.sendMessage({ to: "sw", type: "show", downloadId: s.downloadId }) }, "在文件夹中显示")),
-        h("p", { class: "detail" }, s.fileName),
-      );
-      break;
-    case "failed":
-      parts.push(line(FAILURE_TEXT[s.reason], "error"), h("p", { class: "detail" }, s.message));
-      break;
-    case "canceled":
-      parts.push(line("已取消", "muted"));
-      break;
+    default:
+      if (s?.phase === "done" && sameChoice(task!, selection)) {
+        parts = [row("已保存", h("button", { class: "secondary", onClick: () => void send({ to: "sw", type: "show", downloadId: s.downloadId }) }, "在文件夹中显示"), "done")];
+        break;
+      }
+      parts = [
+        s?.phase === "failed" && h("p", { class: "error", title: s.message }, FAILURE_TEXT[s.reason]),
+        h("button", { class: "primary", disabled: !subj.offer, onClick: () => void download() }, "下载"),
+      ];
   }
-  taskSlot.replaceChildren(...parts.filter((p): p is Node | string => Boolean(p)));
-  taskSlot.hidden = parts.length === 0;
+  actionSlot.replaceChildren(...parts.filter((p): p is Node | string => Boolean(p)));
 }
 
 async function download(): Promise<void> {
@@ -260,7 +255,7 @@ async function download(): Promise<void> {
   }
   const video = selection && streamFor(probe.offer, selection);
   if (!video) return;
-  downloadButton?.setAttribute("disabled", "");
+  actionSlot?.querySelector("button")?.setAttribute("disabled", "");
   const task = await send({ to: "sw", type: "start", video: probe.video, chosen: { video, audio: bestAudio(probe.offer.audios) } });
   if (!tasks.some((t) => t.id === task.id)) onTasks([...tasks, task]);
 }
@@ -277,7 +272,7 @@ async function load(): Promise<void> {
 function onTasks(next: DownloadTask[]): void {
   tasks = next;
   const s = subject();
-  if (s && rendered?.key === videoKey(s.video) && rendered.taskId === s.task?.id) renderTask();
+  if (s && rendered === viewKey(s)) renderAction();
   else render();
 }
 

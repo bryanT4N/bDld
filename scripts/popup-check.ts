@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import type { DownloadTask } from "../src/shared/types";
 import { root } from "./lib/env";
 import { BVID, CID2, openVideoTab, startFakeSite } from "./lib/fake-site";
 import { mediaPair } from "./lib/fixtures";
@@ -72,14 +73,18 @@ try {
   ok("codec choice offers only the codecs at the selected quality and keeps the codec across quality changes when offered");
 
   await popup.getByRole("button", { name: "下载", exact: true }).click();
-  await popup.getByText(/下载中 [1-9]\d?%/).waitFor({ timeout: 60_000 });
-  await popup.getByText(/剩余/).waitFor({ timeout: 30_000 });
+  const progressLine = /^[1-9]\d?% · [\d.]+\/[\d.]+ MB · [\d.]+ (KB|MB)\/s · 剩余 \d+:\d\d$/;
+  await popup.locator(".action .status p").filter({ hasText: progressLine }).waitFor({ timeout: 60_000 });
   await popup.screenshot({ path: path.join(out, "3-downloading.png") });
-  assert.ok(await popup.getByRole("button", { name: "下载", exact: true }).isDisabled());
-  ok("progress with percent, speed and remaining time; download button disabled while running");
+  const during = await popup.locator(".action").innerText();
+  assert.equal(await popup.getByRole("button", { name: "下载", exact: true }).count(), 0, during);
+  assert.equal(await popup.getByRole("button", { name: "取消" }).count(), 1, during);
+  assert.ok(!during.includes("下载中"), during);
+  ok(`one status line "${during.split("\n")[0]}" with a single 取消 and no 下载 button`);
+  ok("progress bar with percent, size, speed and time left while running");
 
   await popup.reload();
-  await popup.getByText(/下载中|正在生成|正在保存|已保存/).first().waitFor();
+  await popup.getByText(/^\d+% · |正在生成|正在保存|已保存/).first().waitFor();
   assert.match(await checked(), /^360P 流畅 · AVC · 约/, "reopened popup must show the task's choice, not the 480P HEVC default");
   assert.equal(await popup.locator("details.choice").count(), 0, "no disclosure while the task runs");
   await popup.screenshot({ path: path.join(out, "3b-reopened-during-download.png") });
@@ -87,7 +92,7 @@ try {
   const elsewhere = await h.ctx.newPage();
   await elsewhere.setViewportSize({ width: 340, height: 420 });
   await elsewhere.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${tabIds.home}`);
-  await elsewhere.getByText(/下载中|正在生成|正在保存|已保存/).first().waitFor();
+  await elsewhere.getByText(/^\d+% · |正在生成|正在保存|已保存/).first().waitFor();
   assert.ok((await elsewhere.locator("main").innerText()).includes("【测试】"));
   await elsewhere.close();
   ok("popup opened on a non-video tab shows the running download from the engine");
@@ -95,12 +100,24 @@ try {
 
   await popup.getByText("已保存").waitFor({ timeout: 120_000 });
   await popup.screenshot({ path: path.join(out, "4-done.png") });
-  const fileName = await popup.locator(".detail").innerText();
+  assert.equal(await popup.locator("details.choice").count(), 1, "choices reopen as soon as the task finishes");
+  const finished = (await popup.evaluate(() => chrome.runtime.sendMessage({ to: "sw", type: "tasks" }))) as DownloadTask[];
+  const fileName = finished.at(-1)!.fileName;
+  const after = await popup.locator(".action").innerText();
+  assert.equal(await popup.getByRole("button", { name: "下载", exact: true }).count(), 0, after);
+  assert.equal(await popup.getByRole("button", { name: "取消" }).count(), 0, after);
   assert.equal(fileName, `${videoData.title} [${BVID}] 360P 流畅.mp4`);
   await popup.reload();
   await popup.getByText("已保存").waitFor();
   assert.match(await checked(), /^360P 流畅 · AVC · 约/, "a finished task's choice is kept after reopening");
   assert.equal(await popup.locator("details.choice").count(), 1, "choices can be opened again after completion");
+  await expand();
+  await popup.locator("select").selectOption("32");
+  assert.equal(await popup.getByRole("button", { name: "下载", exact: true }).count(), 1);
+  assert.equal(await popup.getByRole("button", { name: "在文件夹中显示" }).count(), 0);
+  await popup.locator("select").selectOption("16");
+  assert.equal(await popup.getByRole("button", { name: "下载", exact: true }).count(), 0);
+  ok("after completion a different choice offers 下载 again, never both actions");
   assert.ok(fs.existsSync(path.join(h.downloadsDir, fileName)), "file in the downloads folder");
   assert.ok(await popup.getByRole("button", { name: "在文件夹中显示" }).isVisible());
   ok(`done state shows "${fileName}" and 在文件夹中显示; file exists in the downloads folder`);
