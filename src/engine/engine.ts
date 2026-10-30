@@ -77,7 +77,16 @@ export class Engine {
 
   private set(task: DownloadTask, state: TaskPhase): void {
     task.state = state;
+    if (isTerminal(state)) this.dropOlderFinished(task);
     this.notify();
+  }
+
+  /** Only a video's latest finished task matters, so older ones for the same video are dropped. */
+  private dropOlderFinished(latest: DownloadTask): void {
+    const same = (t: DownloadTask) => t.video.bvid === latest.video.bvid && t.video.cid === latest.video.cid;
+    for (const old of this.tasks.filter((t) => t !== latest && same(t) && isTerminal(t.state))) {
+      this.tasks.splice(this.tasks.indexOf(old), 1);
+    }
   }
 
   private notify(throttled = false): void {

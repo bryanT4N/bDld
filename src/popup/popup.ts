@@ -51,6 +51,8 @@ let probe: ProbeResult | undefined;
 let tasks: DownloadTask[] = [];
 let selection: Selection | undefined;
 let selectionFor: string | undefined;
+/** Set while the selection is a task's choice; cleared once the user picks. */
+let selectionTask: string | undefined;
 let expanded = false;
 /** What the full view was built for; when it changes, the view is rebuilt rather than patched. */
 let rendered: string | undefined;
@@ -74,9 +76,44 @@ async function currentTabId(): Promise<number | undefined> {
 
 const videoKey = (v: VideoInfo) => `${v.bvid}:${v.cid}`;
 
+/** Downloads whose file was deleted or moved, or whose download entry is gone. */
+const missingFiles = new Set<number>();
+const checkedFiles = new Set<number>();
+let tasksSeq = 0;
+
+/** A done task whose file no longer exists counts as never downloaded. */
+const counts = (t: DownloadTask) => t.state.phase !== "done" || !missingFiles.has(t.state.downloadId);
+
 function taskFor(video: VideoInfo): DownloadTask | undefined {
-  return tasks.filter((t) => videoKey(t.video) === videoKey(video)).sort((a, b) => b.createdAt - a.createdAt)[0];
+  return tasks
+    .filter((t) => videoKey(t.video) === videoKey(video) && counts(t))
+    .sort((a, b) => b.createdAt - a.createdAt)[0];
 }
+
+async function fileMissing(downloadId: number): Promise<boolean> {
+  const [item] = await chrome.downloads.search({ id: downloadId });
+  return !item || !item.exists || item.state !== "complete";
+}
+
+async function checkFiles(list: DownloadTask[]): Promise<void> {
+  await Promise.all(
+    list.map(async (t) => {
+      if (t.state.phase !== "done" || checkedFiles.has(t.state.downloadId)) return;
+      checkedFiles.add(t.state.downloadId);
+      if (await fileMissing(t.state.downloadId)) missingFiles.add(t.state.downloadId);
+    }),
+  );
+}
+
+/**
+ * search() makes Chrome re-check whether the file exists, but Chrome checks at most every few
+ * seconds and reports a deletion later through downloads.onChanged. While a saved file is shown,
+ * searching again keeps that check going so a deletion turns the view back to 下载.
+ */
+setInterval(() => {
+  const task = subject()?.task;
+  if (task?.state.phase === "done") void fileMissing(task.state.downloadId);
+}, 2000);
 
 /** The tab's video once probed; until then, or off a video page, the running task's video. */
 function subject(): Subject | undefined {
@@ -97,7 +134,11 @@ function selectionOf(s: Subject): Selection | undefined {
     selection = undefined;
   }
   if (s.offer && selection && !streamFor(s.offer, selection)) selection = undefined;
-  selection ??= s.task ? chosenOf(s.task) : s.offer && s.playing ? defaultSelection(s.offer, s.playing) : undefined;
+  if (selectionTask !== undefined && s.task?.id !== selectionTask) selection = undefined;
+  if (!selection) {
+    selectionTask = s.task?.id;
+    selection = s.task ? chosenOf(s.task) : s.offer && s.playing ? defaultSelection(s.offer, s.playing) : undefined;
+  }
   return selection;
 }
 
@@ -143,6 +184,7 @@ function render(): void {
         "aria-label": "清晰度",
         onChange: (e) => {
           selection = atQuality(offer, Number((e.target as HTMLSelectElement).value), sel.codec);
+          selectionTask = undefined;
           render();
         },
       },
@@ -156,6 +198,7 @@ function render(): void {
           "aria-pressed": String(sel.codec === codec),
           onClick: () => {
             selection = { qn: sel.qn, codec };
+            selectionTask = undefined;
             render();
           },
         },
@@ -236,7 +279,14 @@ function renderAction(): void {
       break;
     default:
       if (s?.phase === "done" && sameChoice(task!, selection)) {
-        parts = [row("已保存", h("button", { class: "secondary", onClick: () => void send({ to: "sw", type: "show", downloadId: s.downloadId }) }, "在文件夹中显示"), "done")];
+        parts = [
+          h(
+            "div",
+            { class: "status" },
+            h("p", {}, h("span", { class: "done" }, "已保存"), " ", h("button", { class: "link", onClick: () => void download() }, "重新下载")),
+            h("button", { class: "secondary", onClick: () => void send({ to: "sw", type: "show", downloadId: s.downloadId }) }, "在文件夹中显示"),
+          ),
+        ];
         break;
       }
       parts = [
@@ -258,7 +308,7 @@ async function download(): Promise<void> {
   if (!video) return;
   actionSlot?.querySelector("button")?.setAttribute("disabled", "");
   const task = await send({ to: "sw", type: "start", video: probe.video, chosen: { video, audio: bestAudio(probe.offer.audios) } });
-  if (!tasks.some((t) => t.id === task.id)) onTasks([...tasks, task]);
+  if (!tasks.some((t) => t.id === task.id)) await onTasks([...tasks, task]);
 }
 
 async function load(): Promise<void> {
@@ -270,7 +320,10 @@ async function load(): Promise<void> {
 }
 
 /** Progress only refreshes the task area; a different video or task rebuilds the whole view. */
-function onTasks(next: DownloadTask[]): void {
+async function onTasks(next: DownloadTask[]): Promise<void> {
+  const seq = ++tasksSeq;
+  await checkFiles(next);
+  if (seq !== tasksSeq) return;
   tasks = next;
   const s = subject();
   if (s && rendered === viewKey(s)) renderAction();
@@ -278,13 +331,24 @@ function onTasks(next: DownloadTask[]): void {
 }
 
 chrome.runtime.onMessage.addListener((msg: unknown) => {
-  if (isTasksChanged(msg)) onTasks(msg.tasks);
+  if (isTasksChanged(msg)) void onTasks(msg.tasks);
   return false;
+});
+
+chrome.downloads.onChanged.addListener((delta) => {
+  if (delta.exists?.current !== false) return;
+  missingFiles.add(delta.id);
+  void onTasks(tasks);
+});
+
+chrome.downloads.onErased.addListener((id) => {
+  missingFiles.add(id);
+  void onTasks(tasks);
 });
 
 /** Tasks load before the probe so a video's task always decides its selection before any default. */
 async function main(): Promise<void> {
-  onTasks(await send({ to: "sw", type: "tasks" }));
+  await onTasks(await send({ to: "sw", type: "tasks" }));
   await load();
 }
 

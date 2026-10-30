@@ -123,6 +123,41 @@ try {
   assert.ok(await popup.getByRole("button", { name: "在文件夹中显示" }).isVisible());
   ok(`done state shows "${fileName}" and 在文件夹中显示; file exists in the downloads folder`);
 
+  fs.rmSync(path.join(h.downloadsDir, fileName));
+  await popup.reload();
+  const deletedAt = Date.now();
+  await popup.getByRole("button", { name: "下载", exact: true }).waitFor();
+  console.log(`     deletion noticed ${((Date.now() - deletedAt) / 1000).toFixed(1)} s after reopening`);
+  assert.equal(await popup.getByText("已保存").count(), 0);
+  assert.match(await checked(), /^480P 清晰 · HEVC · 约/, "with the file gone the default follows the player again");
+  ok("file deleted from the downloads folder: reopened popup shows 下载 with the player's 480P HEVC");
+
+  await popup.getByRole("button", { name: "下载", exact: true }).click();
+  await popup.getByText(/^\d+% · /).first().waitFor({ timeout: 60_000 });
+  await popup.getByText("已保存").waitFor({ timeout: 120_000 });
+  await popup.reload();
+  await popup.getByText("已保存").waitFor();
+  assert.ok(await popup.getByRole("button", { name: "在文件夹中显示" }).isVisible());
+  assert.equal(await popup.getByRole("button", { name: "重新下载" }).count(), 1);
+  assert.equal(await popup.getByRole("button", { name: "下载", exact: true }).count(), 0);
+  assert.equal(await popup.getByRole("button", { name: "取消" }).count(), 0);
+  await popup.screenshot({ path: path.join(out, "4b-done-with-redownload.png") });
+  ok("file kept: reopened popup shows 已保存 with 在文件夹中显示 and 重新下载");
+
+  await popup.getByRole("button", { name: "重新下载" }).click();
+  await popup.getByText(/^\d+% · /).first().waitFor({ timeout: 60_000 });
+  await popup.getByText("已保存").waitFor({ timeout: 120_000 });
+  const base = `${videoData.title} [${BVID}] 480P 清晰`;
+  for (const name of [`${base}.mp4`, `${base} (1).mp4`]) {
+    assert.ok(fs.existsSync(path.join(h.downloadsDir, name)), `${name} missing; folder has ${fs.readdirSync(h.downloadsDir).join(", ")}`);
+  }
+  ok(`重新下载 saved a second file without overwriting: "${base} (1).mp4"`);
+  const kept = ((await popup.evaluate(() => chrome.runtime.sendMessage({ to: "sw", type: "tasks" }))) as DownloadTask[]).filter(
+    (t) => t.video.cid === 2,
+  );
+  assert.equal(kept.length, 1, JSON.stringify(kept.map((t) => t.state.phase)));
+  ok("engine keeps only the latest finished task for the video");
+
   const mediaRequests = server.requests.filter((r) => r.host.startsWith("upos-"));
   assert.ok(mediaRequests.length > 0);
   for (const r of mediaRequests) {

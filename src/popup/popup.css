@@ -218,7 +218,7 @@ select {
 }
 
 .link:hover {
-  color: var(--danger);
+  color: var(--fg);
 }
 
 .bar {
