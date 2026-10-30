@@ -12,6 +12,7 @@ import {
   type Selection,
   type VideoCodec,
   type VideoInfo,
+  type VideoStream,
 } from "../shared/types";
 
 /** playurl addresses expire after about two hours; re-probe well before that. */
@@ -50,6 +51,7 @@ let probe: ProbeResult | undefined;
 let tasks: DownloadTask[] = [];
 let selection: Selection | undefined;
 let selectionFor: string | undefined;
+let expanded = false;
 let rendered: { key: string; taskId: string | undefined } | undefined;
 let taskSlot: HTMLElement | undefined;
 let downloadButton: HTMLButtonElement | undefined;
@@ -126,39 +128,44 @@ function render(): void {
   const streams = offer
     ? qualities(offer).map((qn) => streamFor(offer, atQuality(offer, qn, sel?.codec))!)
     : [task!.chosen.video];
-  const select = h(
-    "select",
-    {
-      "aria-label": "清晰度",
-      disabled: locked,
-      onChange: (e) => {
-        selection = atQuality(offer!, Number((e.target as HTMLSelectElement).value), sel?.codec);
-        render();
-      },
-    },
-    ...streams.map((v) =>
-      h(
-        "option",
-        { value: String(v.qn), selected: v.qn === sel?.qn },
-        `${qualityLabel(v.qn, v.height)} · ${CODEC_NAMES[v.codec]} · 约 ${formatBytes(approxBytes(v, audio, video.durationSec))}`,
-      ),
-    ),
-  );
-  const codecs = offer && sel ? codecsAt(offer, sel.qn) : sel ? [sel.codec] : [];
-  const codecButton = (codec: VideoCodec) =>
-    h(
-      "button",
+  const size = (v: VideoStream) => `约 ${formatBytes(approxBytes(v, audio, video.durationSec))}`;
+  const current = streams.find((v) => v.qn === sel?.qn);
+  const summary = current ? `${qualityLabel(current.qn, current.height)} · ${CODEC_NAMES[current.codec]} · ${size(current)}` : "";
+  let choice: HTMLElement;
+  if (locked || !offer || !sel) {
+    choice = h("p", { class: "choice" }, summary);
+  } else {
+    const select = h(
+      "select",
       {
-        type: "button",
-        disabled: locked,
-        "aria-pressed": String(sel?.codec === codec),
-        onClick: () => {
-          if (sel) selection = { qn: sel.qn, codec };
+        "aria-label": "清晰度",
+        onChange: (e) => {
+          selection = atQuality(offer, Number((e.target as HTMLSelectElement).value), sel.codec);
           render();
         },
       },
-      CODEC_NAMES[codec],
+      ...streams.map((v) => h("option", { value: String(v.qn), selected: v.qn === sel.qn }, `${qualityLabel(v.qn, v.height)} · ${size(v)}`)),
     );
+    const codecButton = (codec: VideoCodec) =>
+      h(
+        "button",
+        {
+          type: "button",
+          "aria-pressed": String(sel.codec === codec),
+          onClick: () => {
+            selection = { qn: sel.qn, codec };
+            render();
+          },
+        },
+        CODEC_NAMES[codec],
+      );
+    choice = h(
+      "details",
+      { class: "choice", open: expanded, onToggle: (e) => (expanded = (e.target as HTMLDetailsElement).open) },
+      h("summary", {}, summary),
+      h("div", { class: "choice-body" }, select, h("div", { class: "segmented", role: "group", "aria-label": "编码" }, ...codecsAt(offer, sel.qn).map(codecButton))),
+    );
+  }
 
   taskSlot = h("section", { class: "task" });
   downloadButton = h("button", { class: "primary", onClick: () => void download() }, "下载");
@@ -178,8 +185,7 @@ function render(): void {
         h("p", { class: "owner" }, `UP：${video.owner}`),
       ),
     ),
-    h("label", { class: "field" }, h("span", {}, "清晰度"), select),
-    h("div", { class: "field" }, h("span", {}, "编码"), h("div", { class: "segmented", role: "group", "aria-label": "编码" }, ...codecs.map(codecButton))),
+    choice,
     ...(video.loggedIn ? [] : [h("p", { class: "login" }, "登录后可下载更高清晰度")]),
     taskSlot,
     downloadButton,

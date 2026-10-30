@@ -33,7 +33,10 @@ try {
   const tabIds = { video: videoTab, home: homeTab };
 
   const popup = await h.ctx.newPage();
-  const checked = () => popup.locator("select option:checked").innerText();
+  const checked = () => popup.locator(".choice summary, p.choice").first().innerText();
+  const expand = async () => {
+    if (!(await popup.locator("details.choice").getAttribute("open").then((v) => v !== null))) await popup.locator(".choice summary").click();
+  };
   await popup.setViewportSize({ width: 340, height: 420 });
 
   await popup.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${tabIds.home}`);
@@ -42,18 +45,21 @@ try {
   ok("non-video tab shows the not-a-video-page state");
 
   await popup.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${tabIds.video}`);
-  await popup.locator("select").waitFor();
+  await popup.locator(".choice").waitFor();
   const text = await popup.locator("main").innerText();
-  for (const s of ["【测试】", "UP：测试 UP 主", "480P 清晰 · HEVC · 约", "登录后可下载更高清晰度"]) {
+  for (const s of ["【测试】", "UP：测试 UP 主", "480P 清晰 · HEVC · 约 8.5 MB", "登录后可下载更高清晰度"]) {
     assert.ok(text.includes(s), `popup should show "${s}":\n${text}`);
   }
   assert.equal(await popup.locator("main").getAttribute("data-source"), "playinfo");
   assert.equal(await popup.locator("main").getAttribute("data-playing"), "player-stream");
-  assert.equal(await popup.locator("select option:checked").innerText(), (await popup.locator("select option").first().innerText()));
+  assert.ok(!(await popup.locator("select").isVisible()), "choices stay collapsed until the summary is opened");
+  assert.ok(!text.includes("优先"), text);
   ok("default is the stream the page player is playing (480P HEVC, not the compatibility-first AVC)");
-  await popup.screenshot({ path: path.join(out, "2-ready.png") });
   ok("video tab: probe via executeScript(MAIN) + __playinfo__ rendered title, UP, quality with size, codec setting, login hint");
 
+  await popup.screenshot({ path: path.join(out, "2-ready-collapsed.png") });
+  await expand();
+  await popup.screenshot({ path: path.join(out, "2b-ready-expanded.png") });
   await popup.getByRole("button", { name: "AVC", exact: true }).click();
   assert.match(await checked(), /^480P 清晰 · AVC · 约/);
   await popup.locator("select").selectOption("16");
@@ -75,7 +81,7 @@ try {
   await popup.reload();
   await popup.getByText(/下载中|正在生成|正在保存|已保存/).first().waitFor();
   assert.match(await checked(), /^360P 流畅 · AVC · 约/, "reopened popup must show the task's choice, not the 480P HEVC default");
-  assert.ok(await popup.locator("select").isDisabled());
+  assert.equal(await popup.locator("details.choice").count(), 0, "no disclosure while the task runs");
   await popup.screenshot({ path: path.join(out, "3b-reopened-during-download.png") });
   ok("reopened popup keeps the running task's 360P AVC (not the player default 480P HEVC) and locks the choice");
   const elsewhere = await h.ctx.newPage();
@@ -94,7 +100,7 @@ try {
   await popup.reload();
   await popup.getByText("已保存").waitFor();
   assert.match(await checked(), /^360P 流畅 · AVC · 约/, "a finished task's choice is kept after reopening");
-  assert.ok(!(await popup.locator("select").isDisabled()));
+  assert.equal(await popup.locator("details.choice").count(), 1, "choices can be opened again after completion");
   assert.ok(fs.existsSync(path.join(h.downloadsDir, fileName)), "file in the downloads folder");
   assert.ok(await popup.getByRole("button", { name: "在文件夹中显示" }).isVisible());
   ok(`done state shows "${fileName}" and 在文件夹中显示; file exists in the downloads folder`);
@@ -116,7 +122,7 @@ try {
 
   const part2Tab = await openVideoTab(h, "?p=2");
   await popup.goto(`chrome-extension://${h.extensionId}/popup.html?tab=${part2Tab}`);
-  await popup.locator("select").waitFor();
+  await popup.locator(".choice").waitFor();
   assert.equal(await popup.locator("main").getAttribute("data-source"), "playurl");
   const part2Text = await popup.locator("main").innerText();
   assert.ok(part2Text.includes("P2 第二部分"), part2Text);
