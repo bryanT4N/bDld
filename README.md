@@ -6,9 +6,9 @@
 
 B 站视频离线缓存工具
 
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/cppeiboagphohchanmlfdhnnllfbjepj?label=Chrome%20Web%20Store)](https://chromewebstore.google.com/detail/cppeiboagphohchanmlfdhnnllfbjepj)
 [![Release](https://img.shields.io/github/v/release/bryanT4N/bDld)](https://github.com/bryanT4N/bDld/releases)
 [![License](https://img.shields.io/github/license/bryanT4N/bDld)](LICENSE)
-![Chrome / Edge](https://img.shields.io/badge/Chrome%20%2F%20Edge-116%2B-4285F4)
 
 <img src="docs/images/popup-downloading.png" width="340" alt="bDld 弹出窗口">
 
@@ -25,11 +25,15 @@ B 站视频离线缓存工具
 
 ## 安装
 
+从 [Chrome 应用商店](https://chromewebstore.google.com/detail/cppeiboagphohchanmlfdhnnllfbjepj) 安装。Edge 打开该页面后，按提示开启「允许来自其他应用商店的扩展」即可安装。
+
+手动安装：
+
 1. 在 [Releases](https://github.com/bryanT4N/bDld/releases) 下载最新的 `bDld-<版本>.zip`，解压到一个固定目录。
 2. 打开 `chrome://extensions`（Edge 为 `edge://extensions`），开启「开发者模式」。
 3. 点击「加载已解压的扩展程序」，选择解压后的目录。
 
-应用商店版本上架后，将在此处提供链接。
+需要 Chrome 或 Edge 116 及以上版本。
 
 ## 使用
 
